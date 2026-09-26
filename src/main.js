@@ -183,7 +183,7 @@ function clearEntities() {
 function place(e, slot) {
   const g = gridSlot(track, slot);
   e.kart.reset(g.x, g.z, g.heading);
-  if (e.kart.step) e.kart.step({ brake: 1 }, STEP, track);
+  if (e.kart.step) e.kart.step({ brake: 1, hold: true }, STEP, track);
   if (e.kart.savePrev) e.kart.savePrev();
 }
 
@@ -281,7 +281,7 @@ function resetKart(e) {
   const f = track.frameAt(k.s);
   const lat = clamp(k.lateral, -2.5, 2.5);
   k.reset(f.x + f.nx * lat, f.z + f.nz * lat, Math.atan2(f.tx, f.tz));
-  k.step({ brake: 1 }, STEP, track);
+  k.step({ brake: 1, hold: true }, STEP, track);
   k.savePrev();
 }
 
@@ -296,7 +296,7 @@ function simStep(h) {
     if (e.kind === 'player') inp = playerInput();
     else inp = e.ai.update(e.kart, others, h);
     if (inp.reset) resetKart(e);
-    if (!canDrive) inp = { steer: 0, throttle: e.kind === 'player' ? inp.throttle * 0.6 : 0, brake: 1 };
+    if (!canDrive) inp = { steer: 0, throttle: e.kind === 'player' ? inp.throttle * 0.6 : 0, brake: 1, hold: true };
     e.kart.savePrev();
     e.kart.step(inp, h, track, e.kind === 'player' ? { countersteer: settings.assists, brakeAssist: settings.assists } : { countersteer: true, brakeAssist: true });
   }

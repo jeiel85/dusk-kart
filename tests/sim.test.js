@@ -161,3 +161,11 @@ test('an AI bot laps the circuit cleanly at a believable pace', () => {
   assert.ok(lap > 45 && lap < 75, `lap time ${lap}`);
   assert.ok(hardHits < 20, `hard barrier hits ${hardHits}`);
 });
+
+test('a kart held on the grid does not creep or reverse', () => {
+  const kart = placeOnStraight(new Kart());
+  const x0 = kart.x, z0 = kart.z;
+  for (let i = 0; i < 240 * 6; i++) kart.step({ brake: 1, hold: true }, DT, track);
+  assert.ok(kart.speed < 0.05, `speed on the grid ${kart.speed}`);
+  assert.ok(Math.hypot(kart.x - x0, kart.z - z0) < 0.05, 'kart stayed in its grid box');
+});

@@ -122,13 +122,15 @@ export class Kart {
     // --- driver controls -------------------------------------------------
     let throttle = clamp(input.throttle || 0, 0, 1);
     let brake = clamp(input.brake || 0, 0, 1);
-    if (!this.reverse && brake > 0.5 && throttle < 0.1 && Math.abs(u) < 0.4) {
+    // Holding the brake at a standstill engages slow reverse — except when the
+    // kart is being held on the grid (input.hold), which must stay put.
+    if (!input.hold && !this.reverse && brake > 0.5 && throttle < 0.1 && Math.abs(u) < 0.4) {
       this.reverseTimer += dt;
       if (this.reverseTimer > 0.6) this.reverse = true;
     } else if (!this.reverse) {
       this.reverseTimer = 0;
     }
-    if (this.reverse && (throttle > 0.1 || brake < 0.1)) { this.reverse = false; this.reverseTimer = 0; }
+    if (this.reverse && (input.hold || throttle > 0.1 || brake < 0.1)) { this.reverse = false; this.reverseTimer = 0; }
 
     let target = clamp(input.steer || 0, -1, 1) * this.maxSteer(speed);
     if (assists.countersteer && speed > 4 && u > 0) {
