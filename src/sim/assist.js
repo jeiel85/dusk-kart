@@ -29,9 +29,11 @@ export class DriveAssist {
     this.track = track;
     this.pilot = new AIDriver(track, line, { pace: 1 });
     this.f = {};
+    this.avoid = 0;
   }
 
-  apply(kart, input, mode) {
+  /** @param others karts to steer around (the player's own kart may be included) */
+  apply(kart, input, mode, others = [], dt = 1 / 240) {
     if (mode !== 'easy') return input;
     const speed = kart.speed;
     const physics = PHYSICS_ASSISTS[mode];
@@ -39,7 +41,11 @@ export class DriveAssist {
 
     // Steering guidance, expressed in the same units as the player's input.
     const range = kart.steerRange(speed, physics.steerLimit);
-    const guide = clamp((this.pilot.pursuit(kart) * kart.maxSteer(speed)) / range, -1, 1);
+    // Same racecraft as the bots: go round slower karts instead of into them.
+    const tr = this.pilot.traffic(kart, others);
+    const want = tr.target === null ? 0 : tr.target - this.pilot.lineOffset(kart.s + 3.2 + speed * 0.32);
+    this.avoid += clamp(want - this.avoid, -3 * dt, 3 * dt);
+    const guide = clamp((this.pilot.pursuit(kart, this.avoid) * kart.maxSteer(speed)) / range, -1, 1);
     const hands = Math.abs(steer);
     const w = hands < 0.15 ? 0.7 : 0.35;
     steer += (guide - steer) * w;
@@ -58,7 +64,7 @@ export class DriveAssist {
     // little under the ideal (0.95x) so that holding the throttle alone gets
     // round safely but does not beat the AI field — winning is for "normal".
     if (!kart.reverse && throttle > 0) {
-      const vT = this.pilot.targetSpeed(kart.s + 2 + speed * 0.3) * EASY_PACE;
+      const vT = Math.min(this.pilot.targetSpeed(kart.s + 2 + speed * 0.3) * EASY_PACE, tr.cap);
       if (speed > vT + 0.2) throttle = Math.min(throttle, clamp(1 - (speed - vT) * 0.8, 0, 1));
       if (speed > vT + 1.0) brake = Math.max(brake, clamp((speed - vT) * 0.3, 0, 0.8));
     }

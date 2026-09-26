@@ -283,7 +283,8 @@ function playerInput() {
   if (!e) return { steer: 0, throttle: 0, brake: 0 };
   if (e.ai && (e.autopilot || params.get('autopilot'))) return e.ai.update(e.kart, G.entities.map((x) => x.kart), STEP);
   if (G.paused || uiBlocksDriving()) return { steer: 0, throttle: 0, brake: 0.4 };
-  return driveAssist.apply(e.kart, { steer: input.steer, throttle: input.throttle, brake: input.brake }, settings.driveMode);
+  const others = G.entities.filter((x) => x !== e && !x.hidden && !x.noCollide).map((x) => x.kart);
+  return driveAssist.apply(e.kart, { steer: input.steer, throttle: input.throttle, brake: input.brake }, settings.driveMode, others, STEP);
 }
 
 function playerDriving(e) {
