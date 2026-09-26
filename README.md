@@ -1,0 +1,111 @@
+<div align="center">
+
+# 🏁 DUSK KART
+
+**액션캠으로 찍은 카트 주행을 그대로 옮겨 온 브라우저 3D 카트 레이싱**
+
+헬멧 액션캠 1인칭 시점 · 실제 렌탈 카트에 가까운 물리 · 서버 없는 P2P 온라인 대전
+
+[![Live Demo](https://img.shields.io/badge/▶_LIVE_DEMO-플레이하기-ff7a1a?style=for-the-badge)](https://jeiel85.github.io/dusk-kart/)
+
+[![Deploy](https://github.com/jeiel85/dusk-kart/actions/workflows/pages.yml/badge.svg)](https://github.com/jeiel85/dusk-kart/actions/workflows/pages.yml)
+![three.js](https://img.shields.io/badge/three.js-r186-000?logo=three.js)
+![WebRTC](https://img.shields.io/badge/multiplayer-WebRTC_P2P-7b3fe4)
+![No assets](https://img.shields.io/badge/assets-100%25_procedural-2ea44f)
+[![License: MIT](https://img.shields.io/badge/license-MIT-blue)](LICENSE)
+
+<img src="docs/screenshots/hero.jpg" alt="헬멧 액션캠 시점 — 연석과 관람차가 보이는 코너" width="100%" />
+
+</div>
+
+## 이런 게임입니다
+
+해 질 녘 놀이공원 옆 야외 카트장 **Lumen Park Circuit**. 헬멧에 단 액션캠 시점으로 운전대와 장갑 낀 손을 내려다보며, 광각 렌즈 왜곡과 가장자리 모션 블러 속에서 AI나 친구와 3랩 레이스를 합니다. 설치도 회원가입도 없이 링크만 열면 됩니다.
+
+| 헬멧 액션캠 (1인칭) | 3인칭 체이스 | 3인칭 원거리 |
+|:---:|:---:|:---:|
+| <img src="docs/screenshots/cockpit.jpg" alt="1인칭 액션캠" /> | <img src="docs/screenshots/chase.jpg" alt="3인칭 체이스 캠" /> | <img src="docs/screenshots/far.jpg" alt="3인칭 원거리 캠" /> |
+
+## ✨ 특징
+
+**🎥 액션캠 룩**
+- 헬멧 마운트 카메라: 횡G에 따라 고개가 기울고 코너 안쪽을 바라보며, 엔진·노면·연석 진동이 전달됩니다
+- 후처리 렌즈 셰이더: 배럴(어안) 왜곡, 속도에 비례하는 방사형 모션 블러(중앙은 선명), 가장자리 색수차, 비네트, 필름 그레인
+- 2단 IK로 운전대를 따라 움직이는 팔과 장갑, 거울처럼 뒤집혀 보이는 앞 번호판까지
+
+**🏎️ 카트다운 물리** — 게임용으로 단순화했지만 "카트만의 특징"은 살렸습니다
+- **솔리드 리어 액슬(디퍼렌셜 없음)** — 코너에서 안쪽 뒷바퀴가 끌려 저속에서 꺾으면 카트가 무거워집니다
+- **캐스터 재킹** — 조향할수록 안쪽 뒷바퀴 하중이 빠져(실제로 살짝 들림) 액슬이 풀리며 돌아갑니다
+- **후륜 전용 브레이크** — 코너 안에서 세게 밟으면 뒤가 잠겨 미끄러집니다 (보조 기능으로 잠김 방지 가능)
+- 원심 클러치 + 단기통 4행정 엔진 토크 곡선, 거버너, 엔진 브레이크 — 최고속 약 80 km/h
+- Pacejka 계열 타이어 모델 + 마찰 타원, 앞/뒤 폭이 다른 타이어, 애커먼 조향, 하중 이동(가감속·횡)
+- 속도 감응 조향, 연석(그립↓·진동)과 에이프런(먼지·그립↓) 노면, 타이어 배리어/카트 간 충격량 기반 충돌
+- 240 Hz 고정 스텝 시뮬레이션 + 렌더 보간
+
+**🌐 서버 없는 온라인 대전**
+- [Trystero](https://github.com/dmotz/trystero)로 공개 Nostr 릴레이에서 서로를 찾은 뒤 **브라우저끼리 WebRTC로 직접 연결** — 운영하는 게임 서버가 없습니다
+- 방 코드/초대 링크로 입장 → 로비에서 자유 주행 → 호스트가 시작하면 그리드 정렬 후 스타트 라이트
+- 각자 자기 카트를 시뮬레이션하고 20 Hz 스냅샷 교환, 시계 오프셋 추정 + 보간/외삽으로 부드럽게 표시
+
+**🧩 모드**
+- 퀵 레이스: AI 5대와 3랩 (AI도 플레이어와 **같은 물리**로 달립니다 — 최소 곡률 레이싱 라인 + 속도 프로파일)
+- 타임 트라이얼: 베스트 랩 고스트와 함께 달리기
+- 온라인 대전: 최대 8명
+
+**🎨 에셋 0개** — 모든 모델·텍스처·사운드를 코드로 생성합니다
+- 카트/드라이버/놀이기구/배리어/가로등은 three.js 기본 도형 조합, 텍스처는 런타임 Canvas로 그림
+- 엔진음은 단기통 폭발 사이클을 합성한 루프 버퍼를 RPM에 맞춰 재생, 타이어 스크럽·바람·연석 소리는 필터링한 노이즈
+- 트랙 **Lumen Park Circuit**은 실존 서킷을 본뜨지 않은 오리지널 레이아웃입니다 (864 m, 25개 제어점의 centripetal Catmull-Rom)
+
+## 🎮 조작
+
+| 동작 | 키보드 | 게임패드 | 터치 |
+|---|---|---|---|
+| 가속 | `W` / `↑` | RT (또는 A) | GAS |
+| 브레이크 / 정지 후 길게 = 후진 | `S` / `↓` / `Space` | LT (또는 X) | BRAKE |
+| 조향 | `A` `D` / `←` `→` | 왼쪽 스틱 | 화면 왼쪽 드래그 |
+| 카메라 전환 | `C` | Y | 🎥 버튼 |
+| 트랙 복귀 | `R` | Back | — |
+| 일시정지 | `Esc` / `P` | Start | ❚❚ 버튼 |
+| 음소거 | `M` | — | — |
+
+## 🚀 로컬 실행
+
+```bash
+npm install
+npm run dev        # http://localhost:5173
+npm test           # 트랙 기하 · 물리 · AI 완주 · 랩 카운트 테스트
+npm run build      # dist/ 정적 파일 — 아무 정적 호스팅에 올리면 끝
+```
+
+엄격한 NAT(회사망·일부 모바일망)에서는 WebRTC 직접 연결이 실패할 수 있습니다. 이때는 빌드 시 TURN 서버를 지정하세요.
+
+```bash
+VITE_TURN_URLS=turn:turn.example.com:3478 VITE_TURN_USERNAME=user VITE_TURN_CREDENTIAL=pass npm run build
+```
+
+## 🗂️ 구조
+
+```
+src/
+├─ sim/            # three.js 비의존 순수 시뮬레이션 (Node에서 테스트)
+│  ├─ track.js     # 스플라인 트랙, 투영, 노면, 최소 곡률 레이싱 라인
+│  ├─ kart.js      # 카트 동역학, 배리어·카트 충돌
+│  ├─ ai.js        # 퓨어 퍼슛 + 속도 프로파일 봇
+│  └─ race.js      # 랩/순위 집계, 그리드
+├─ render/         # three.js 장면: 트랙·놀이공원·하늘, 카트+드라이버 IK, 카메라, 렌즈 후처리, 스키드 마크
+├─ net.js          # Trystero P2P 세션, 시계 동기화, 스냅샷 보간
+├─ audio.js        # WebAudio 합성 엔진음·효과음
+├─ input.js        # 키보드·게임패드·터치
+└─ main.js         # 모드/레이스 진행/UI
+```
+
+## 알려진 한계
+
+- 온라인은 각 클라이언트가 자기 카트를 권위적으로 시뮬레이션합니다(치트 방지 없음). 카트 간 충돌은 양쪽이 각자 절반씩 반영하는 근사입니다.
+- 매칭에 공개 Nostr 릴레이를 사용하므로 릴레이 상태에 따라 연결에 몇 초가 걸리거나 실패할 수 있습니다.
+- 개선 예정 항목은 [Issues](https://github.com/jeiel85/dusk-kart/issues)에서 관리합니다.
+
+## License
+
+[MIT](LICENSE) — 코드·모델·텍스처·사운드 모두 이 저장소에서 생성됩니다. 런타임 의존성: [three.js](https://threejs.org) (MIT), [Trystero](https://github.com/dmotz/trystero) (MIT).
