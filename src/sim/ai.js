@@ -32,10 +32,29 @@ export class AIDriver {
     return this.line.speed[i];
   }
 
-  update(kart, others, dt) {
+  /** Pure-pursuit steer input (-1..1) toward the racing line (+ extra offset). */
+  pursuit(kart, extraOffset = 0) {
     const t = this.track;
     const speed = kart.speed;
     const sin = Math.sin(kart.heading), cos = Math.cos(kart.heading);
+    const look = 3.2 + speed * 0.32;
+    const sT = kart.s + look;
+    const f = t.frameAt(sT, this.f);
+    const lim = t.halfWidth - 0.9;
+    const off = clamp(this.lineOffset(sT) + extraOffset, -lim, lim);
+    const tx = f.x + f.nx * off - kart.x;
+    const tz = f.z + f.nz * off - kart.z;
+    const along = tx * sin + tz * cos;
+    const side = tx * -cos + tz * sin; // + right
+    const d2 = Math.max(1, along * along + side * side);
+    const curv = (2 * side) / d2;
+    const L = kart.spec.a + kart.spec.b;
+    return clamp(Math.atan(curv * L) / kart.maxSteer(speed), -1, 1);
+  }
+
+  update(kart, others, dt) {
+    const t = this.track;
+    const speed = kart.speed;
 
     // Avoid karts directly ahead by shifting the target line sideways.
     let want = 0;
@@ -52,21 +71,7 @@ export class AIDriver {
     this.avoid += clamp(want - this.avoid, -2.5 * dt, 2.5 * dt);
     this.wobble += (this.rand() - 0.5) * dt * 0.8 - this.wobble * dt * 0.5;
 
-    const look = 3.2 + speed * 0.32;
-    const sT = kart.s + look;
-    const f = t.frameAt(sT, this.f);
-    const lim = t.halfWidth - 0.9;
-    const off = clamp(this.lineOffset(sT) + this.avoid + this.lineBias + this.wobble, -lim, lim);
-    const tx = f.x + f.nx * off - kart.x;
-    const tz = f.z + f.nz * off - kart.z;
-    const along = tx * sin + tz * cos;
-    const side = tx * -cos + tz * sin; // + right
-    const d2 = Math.max(1, along * along + side * side);
-    const curv = (2 * side) / d2;
-    const L = kart.spec.a + kart.spec.b;
-    const delta = Math.atan(curv * L);
-    let steer = clamp(delta / kart.maxSteer(speed), -1, 1);
-
+    const steer = this.pursuit(kart, this.avoid + this.lineBias + this.wobble);
     const vT = this.targetSpeed(kart.s + 2 + speed * 0.25) * this.pace;
     const err = vT - speed;
     let throttle = 0, brake = 0;

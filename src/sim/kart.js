@@ -100,6 +100,27 @@ export class Kart {
   }
 
   /**
+   * Road-wheel angle that a full steering input maps to. With the steer
+   * limiter (0..1) a full keyboard press no longer means full lock: it is
+   * capped to what the tyres can use at this speed (plus a small slip
+   * margin) and to a turn rate a human can correct within their reaction
+   * time (0.9 rad/s; the tightest hairpin needs ~0.75). Mashing a key then
+   * neither scrubs the solid axle to a crawl nor swings the kart past the
+   * apex before the player can react.
+   */
+  steerRange(speed, limiter = 0) {
+    const full = this.maxSteer(speed);
+    if (!limiter) return full;
+    const s = this.spec;
+    const L = s.a + s.b;
+    const v = Math.max(speed, 0.5);
+    const grip = (L * s.mu * 9.81 * 0.95) / (v * v) + 0.09;
+    const yaw = Math.atan((L * 0.9) / v);
+    const cap = Math.min(full, grip, yaw);
+    return full + (cap - full) * limiter;
+  }
+
+  /**
    * @param input {steer:-1..1 (right +), throttle:0..1, brake:0..1}
    * @param assists {countersteer:bool, brakeAssist:bool}
    */
@@ -132,7 +153,7 @@ export class Kart {
     }
     if (this.reverse && (input.hold || throttle > 0.1 || brake < 0.1)) { this.reverse = false; this.reverseTimer = 0; }
 
-    let target = clamp(input.steer || 0, -1, 1) * this.maxSteer(speed);
+    let target = clamp(input.steer || 0, -1, 1) * this.steerRange(speed, assists.steerLimit || 0);
     if (assists.countersteer && speed > 4 && u > 0) {
       const beta = Math.atan2(w, Math.abs(u)); // body slip angle
       if (Math.abs(beta) > 0.06) target += clamp((beta - Math.sign(beta) * 0.06) * 0.9, -0.2, 0.2);
@@ -272,6 +293,22 @@ export class Kart {
     }
     this.surfaceGrip = gripSum / 4;
     this.rumble = rumble;
+
+    // Stability assist (0..1): pulls the yaw rate toward what the steering
+    // asks for (bounded by the grip limit) and damps sideways sliding. It
+    // cures both spins and solid-axle push; off in the "real" mode.
+    const stab = assists.stability || 0;
+    if (stab > 0 && speed > 2.5 && !this.reverse) {
+      const aMax = s.mu * G * 0.95;
+      const rMax = aMax / speed;
+      const rKin = clamp((-u * Math.tan(delta)) / L, -rMax, rMax);
+      Tz += stab * s.inertia * 5 * (rKin - this.omega);
+      const slipW = w - Math.sign(w) * Math.abs(u) * 0.05; // tolerate ~3° of body slip
+      if (Math.sign(slipW) === Math.sign(w)) {
+        const cap = 0.35 * mg * stab;
+        Fw -= clamp(stab * m * 3.5 * slipW, -cap, cap);
+      }
+    }
 
     // Aero drag + apron dust drag.
     const drag = 0.5 * RHO * s.cdA * speed;

@@ -48,6 +48,11 @@
     <section id="scr-main" class="panel">
       <h1><span>DUSK</span> KART</h1>
       <p class="tag">액션캠 시점 카트 레이싱 · Lumen Park Circuit</p>
+      <div class="mode-box">
+        <span>조작 난이도</span>
+        <div id="mode-pick" class="seg" role="group" aria-label="조작 난이도"></div>
+        <p id="mode-hint" class="note"></p>
+      </div>
       <div class="menu">
         <button data-go="race">퀵 레이스 <small>AI 5대와 3랩 레이스</small></button>
         <button data-go="trial">타임 트라이얼 <small>혼자 달리며 베스트 랩 + 고스트</small></button>
@@ -96,7 +101,13 @@
       </label>
       <label>모션 블러 <input id="set-blur" type="range" min="0" max="1.5" step="0.1" /></label>
       <label class="check"><input id="set-lens" type="checkbox" /> 액션캠 광각 렌즈 왜곡</label>
-      <label class="check"><input id="set-assist" type="checkbox" /> 주행 보조 (카운터스티어 · 브레이크 잠김 방지)</label>
+      <label>조작 난이도
+        <select id="set-mode">
+          <option value="easy">쉬움 — 조향·감속·벽 회피 보조</option>
+          <option value="normal">보통 — 조향 한계·스핀 방지</option>
+          <option value="real">리얼 — 보조 없음</option>
+        </select>
+      </label>
       <label>음량 <input id="set-volume" type="range" min="0" max="1" step="0.05" /></label>
       <label>그래픽 품질
         <select id="set-quality">
@@ -120,7 +131,7 @@
         <tr><td>일시정지</td><td><kbd>Esc</kbd> / <kbd>P</kbd> · 패드 Start</td></tr>
         <tr><td>음소거</td><td><kbd>M</kbd></td></tr>
       </table>
-      <p class="note">정지 상태에서 브레이크를 길게 누르면 천천히 후진합니다. 렌탈 카트처럼 뒷바퀴에만 브레이크가 있어 코너 안에서 세게 밟으면 뒤가 미끄러집니다. 솔리드 액슬이라 저속에서 조향을 과하게 꺾으면 카트가 끌리듯 느려집니다 — 부드럽게!</p>
+      <p class="note">어렵다면 메인 메뉴에서 조작 난이도를 <b>쉬움</b>으로 두세요 — 가속만 누르고 있어도 코너 앞에서 알아서 감속하고 라인을 따라가도록 도와줍니다. 정지 상태에서 브레이크를 길게 누르면 천천히 후진합니다. <b>리얼</b>에서는 렌탈 카트처럼 뒷바퀴에만 브레이크가 있어 코너 안에서 세게 밟으면 뒤가 미끄러지고, 솔리드 액슬이라 저속에서 조향을 과하게 꺾으면 끌리듯 느려집니다.</p>
       <div class="menu-row"><button data-back>확인</button></div>
     </section>
 

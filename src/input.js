@@ -1,4 +1,5 @@
 import { clamp } from './sim/math.js';
+import { rampSteer } from './sim/controls.js';
 
 /**
  * Keyboard, gamepad and touch input merged into one analog control state.
@@ -108,15 +109,13 @@ export class Input {
       break;
     }
 
-    let target = (right ? 1 : 0) - (left ? 1 : 0);
+    const target = (right ? 1 : 0) - (left ? 1 : 0);
     if (this.usingPad) {
       this.steer = padSteer;
     } else if (this.touch.active && this.touch.steer !== 0) {
       this.steer = this.touch.steer;
     } else {
-      // Keyboard: ramp in, faster when reversing direction or releasing.
-      const rate = target === 0 ? 5.5 : Math.sign(target) !== Math.sign(this.steer) && this.steer !== 0 ? 7 : 2.6 + 1.2 / (1 + speed * 0.1);
-      this.steer += clamp(target - this.steer, -rate * dt, rate * dt);
+      this.steer = rampSteer(this.steer, target, dt, speed);
     }
     this.throttle = Math.max(up ? 1 : 0, padGas, this.touch.throttle);
     this.brake = Math.max(down ? 1 : 0, padBrake, this.touch.brake);

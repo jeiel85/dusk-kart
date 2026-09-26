@@ -4,6 +4,7 @@ import { Track, computeRacingLine } from './sim/track.js';
 import { Kart, KART_SPEC, collideKarts } from './sim/kart.js';
 import { AIDriver } from './sim/ai.js';
 import { RaceTracker, gridSlot } from './sim/race.js';
+import { DriveAssist, DRIVE_MODES, DRIVE_MODE_LABELS, PHYSICS_ASSISTS } from './sim/assist.js';
 import { clamp, mulberry32 } from './sim/math.js';
 import { buildTrackScene, buildSky } from './render/trackScene.js';
 import { KartModel } from './render/kartModel.js';
@@ -26,11 +27,18 @@ const isTouch = matchMedia('(pointer: coarse)').matches || navigator.maxTouchPoi
 
 // ---------------------------------------------------------------- settings
 const DEFAULTS = {
-  camera: 'helmet', motionBlur: 1, lensDistortion: true, assists: true, volume: 0.8,
+  camera: 'helmet', motionBlur: 1, lensDistortion: true, driveMode: 'easy', volume: 0.8,
   quality: isTouch ? 'low' : 'high', name: '', color: COLORS[0], number: 12,
 };
 function loadSettings() {
-  try { return { ...DEFAULTS, ...JSON.parse(localStorage.getItem('duskkart.settings') || '{}') }; } catch { return { ...DEFAULTS }; }
+  let saved = {};
+  try { saved = JSON.parse(localStorage.getItem('duskkart.settings') || '{}') || {}; } catch { /* corrupt or blocked storage: use defaults */ }
+  // v0.1.0 stored a single on/off "assists" flag.
+  if (saved.driveMode === undefined && saved.assists !== undefined) saved.driveMode = saved.assists ? 'normal' : 'real';
+  delete saved.assists;
+  const merged = { ...DEFAULTS, ...saved };
+  if (!DRIVE_MODES.includes(merged.driveMode)) merged.driveMode = DEFAULTS.driveMode;
+  return merged;
 }
 const settings = loadSettings();
 function saveSettings() {
@@ -73,6 +81,8 @@ const post = new PostFX(renderer, scene, rig.camera, { bloom: settings.quality !
 const audio = new KartAudio();
 audio.volume = settings.volume;
 const input = new Input(document.getElementById('touch'));
+const driveAssist = new DriveAssist(track, line);
+const BOT_ASSISTS = { countersteer: true, brakeAssist: true };
 const hud = new Hud(track, line);
 
 function resize() {
@@ -273,7 +283,11 @@ function playerInput() {
   if (!e) return { steer: 0, throttle: 0, brake: 0 };
   if (e.ai && (e.autopilot || params.get('autopilot'))) return e.ai.update(e.kart, G.entities.map((x) => x.kart), STEP);
   if (G.paused || uiBlocksDriving()) return { steer: 0, throttle: 0, brake: 0.4 };
-  return { steer: input.steer, throttle: input.throttle, brake: input.brake };
+  return driveAssist.apply(e.kart, { steer: input.steer, throttle: input.throttle, brake: input.brake }, settings.driveMode);
+}
+
+function playerDriving(e) {
+  return e.kind === 'player' && !(e.ai && (e.autopilot || params.get('autopilot')));
 }
 
 function resetKart(e) {
@@ -298,7 +312,7 @@ function simStep(h) {
     if (inp.reset) resetKart(e);
     if (!canDrive) inp = { steer: 0, throttle: e.kind === 'player' ? inp.throttle * 0.6 : 0, brake: 1, hold: true };
     e.kart.savePrev();
-    e.kart.step(inp, h, track, e.kind === 'player' ? { countersteer: settings.assists, brakeAssist: settings.assists } : { countersteer: true, brakeAssist: true });
+    e.kart.step(inp, h, track, playerDriving(e) ? PHYSICS_ASSISTS[settings.driveMode] : BOT_ASSISTS);
   }
   // Contacts.
   const ents = G.entities;
@@ -710,14 +724,39 @@ function fillSettings() {
   document.getElementById('set-camera').value = settings.camera;
   document.getElementById('set-blur').value = settings.motionBlur;
   document.getElementById('set-lens').checked = settings.lensDistortion;
-  document.getElementById('set-assist').checked = settings.assists;
+  document.getElementById('set-mode').value = settings.driveMode;
   document.getElementById('set-volume').value = settings.volume;
   document.getElementById('set-quality').value = settings.quality;
 }
 document.getElementById('set-camera').onchange = (e) => { settings.camera = e.target.value; rig.setMode(settings.camera); saveSettings(); };
 document.getElementById('set-blur').oninput = (e) => { settings.motionBlur = Number(e.target.value); saveSettings(); };
 document.getElementById('set-lens').onchange = (e) => { settings.lensDistortion = e.target.checked; saveSettings(); };
-document.getElementById('set-assist').onchange = (e) => { settings.assists = e.target.checked; saveSettings(); };
+document.getElementById('set-mode').onchange = (e) => setDriveMode(e.target.value);
+
+// Control mode picker on the main menu.
+const MODE_HINTS = {
+  easy: '처음이라면 추천 — 라인을 따라 조향을 돕고, 코너 앞에서 자동 감속하며, 벽에 가까워지면 밀어냅니다. 익숙해지면 보통으로!',
+  normal: '조향 한계·스핀 방지만 켜진 상태. 속도 조절과 라인은 직접.',
+  real: '보조 없음. 후륜 잠김, 솔리드 액슬 끌림 등 카트 특성을 그대로.',
+};
+const modeRow = document.getElementById('mode-pick');
+for (const m of DRIVE_MODES) {
+  const b = document.createElement('button');
+  b.type = 'button';
+  b.dataset.mode = m;
+  b.textContent = DRIVE_MODE_LABELS[m];
+  b.onclick = () => setDriveMode(m);
+  modeRow.appendChild(b);
+}
+function setDriveMode(m) {
+  if (!DRIVE_MODES.includes(m)) return;
+  settings.driveMode = m;
+  saveSettings();
+  for (const b of modeRow.children) b.classList.toggle('on', b.dataset.mode === m);
+  document.getElementById('mode-hint').textContent = MODE_HINTS[m];
+  document.getElementById('set-mode').value = m;
+}
+setDriveMode(settings.driveMode);
 document.getElementById('set-volume').oninput = (e) => { settings.volume = Number(e.target.value); audio.setVolume(settings.volume); saveSettings(); };
 document.getElementById('set-quality').onchange = (e) => { settings.quality = e.target.value; saveSettings(); location.reload(); };
 
