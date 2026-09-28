@@ -25,6 +25,8 @@ export const SNAP_LEN = 14;
 export const NO_PROGRESS = -1e6;
 /** Well above a rental kart's ~25 m/s top speed, to leave room for contact impulses. */
 export const MAX_SPEED = 32;
+/** Grid slots sit behind the start line, so a new race starts at progress <= 0. */
+const GRID_MAX_PROGRESS = 4;
 
 /** Track-derived limits for {@link sanitizeSnapshot}. */
 export function snapshotLimits(track) {
@@ -60,14 +62,19 @@ export function sanitizeSnapshot(s, lim) {
 
 /**
  * Caps how fast a peer's reported race progress may grow, measured on the
- * receiver's clock. Progress may always go down (reversing, a new race).
+ * receiver's clock. A token bucket: credit accrues at `maxSpeed` and is
+ * capped at `burst` (network jitter delivers several snapshots at once), so
+ * over any stretch of time progress can gain at most maxSpeed * t + burst —
+ * however often the peer sends. Progress may always go down (reversing, a
+ * new race).
  */
 export class ProgressGuard {
-  constructor(maxSpeed = MAX_SPEED, slack = 4) {
+  constructor(maxSpeed = MAX_SPEED, burst = MAX_SPEED) {
     this.maxSpeed = maxSpeed;
-    this.slack = slack;
+    this.burst = burst;
     this.value = null;
     this.t = 0;
+    this.credit = burst;
     this.violations = 0;
   }
 
@@ -76,15 +83,28 @@ export class ProgressGuard {
     const prev = this.value;
     const dt = Math.max(0, (tMs - this.t) / 1000);
     this.t = tMs;
+    this.credit = Math.min(this.burst, this.credit + this.maxSpeed * dt);
     if (progress === NO_PROGRESS || prev === null) {
       // First sight of a peer (it may already be mid-race when we join).
       this.value = progress;
       return progress;
     }
     // Leaving the lobby for a race: karts start on the grid, behind the line.
-    const cap = prev === NO_PROGRESS ? this.slack : prev + this.maxSpeed * dt + this.slack;
-    if (progress > cap) this.violations++;
-    this.value = Math.min(progress, cap);
+    if (prev === NO_PROGRESS) {
+      this.value = Math.min(progress, GRID_MAX_PROGRESS);
+      if (progress > GRID_MAX_PROGRESS) this.violations++;
+      this.credit = 0;
+      return this.value;
+    }
+    const gain = progress - prev;
+    if (gain <= 0) {
+      this.value = progress;
+      return progress;
+    }
+    if (gain > this.credit) this.violations++;
+    const allowed = Math.min(gain, this.credit);
+    this.credit -= allowed;
+    this.value = prev + allowed;
     return this.value;
   }
 }
