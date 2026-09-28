@@ -8,6 +8,10 @@ import * as T from './textures.js';
  */
 const Y = new THREE.Vector3(0, 1, 0);
 const tmpA = new THREE.Vector3(), tmpB = new THREE.Vector3(), tmpC = new THREE.Vector3();
+const armScratch = {
+  H: new THREE.Vector3(), dir: new THREE.Vector3(), pole: new THREE.Vector3(),
+  E: new THREE.Vector3(), handPos: new THREE.Vector3(), wrist: new THREE.Vector3(),
+};
 
 // Shared geometry/materials across all karts.
 let shared = null;
@@ -293,26 +297,29 @@ export class KartModel {
     this.body.updateMatrixWorld(true);
     this._inv.copy(this.driver.matrixWorld).invert();
     const L1 = 0.29, L2 = 0.3;
+    // Runs every frame for every kart: reuse scratch vectors, no allocation.
+    // (stretch() uses tmpB, so the solver keeps its own.)
+    const { H, dir, pole, E, handPos, wrist } = armScratch;
     for (const arm of this.arms) {
       const grip = arm.side > 0 ? this.gripL : this.gripR;
-      const H = grip.getWorldPosition(tmpA).applyMatrix4(this._inv).clone();
+      grip.getWorldPosition(H).applyMatrix4(this._inv);
       const S = arm.shoulder;
-      const d = tmpB.subVectors(H, S);
-      let len = d.length();
-      const dir = d.clone().multiplyScalar(1 / len);
+      dir.subVectors(H, S);
+      let len = dir.length();
+      dir.multiplyScalar(1 / len);
       len = Math.min(len, (L1 + L2) * 0.995);
       const a = (L1 * L1 - L2 * L2 + len * len) / (2 * len);
       const h = Math.sqrt(Math.max(0, L1 * L1 - a * a));
       // Elbows point outwards and down.
-      const pole = new THREE.Vector3(arm.side * 1, -0.8, -0.2);
+      pole.set(arm.side * 1, -0.8, -0.2);
       pole.addScaledVector(dir, -pole.dot(dir)).normalize();
-      const E = S.clone().addScaledVector(dir, a).addScaledVector(pole, h);
-      const handPos = S.clone().addScaledVector(dir, len);
+      E.copy(S).addScaledVector(dir, a).addScaledVector(pole, h);
+      handPos.copy(S).addScaledVector(dir, len);
       stretch(arm.upper, S, E);
       arm.upper.scale.y = L1 / 1.11;
       // Sleeve stops at the wrist; the glove wraps the rim.
       const fore = E.distanceTo(handPos);
-      const wrist = E.clone().lerp(handPos, Math.max(0.3, (fore - 0.1) / fore));
+      wrist.copy(E).lerp(handPos, Math.max(0.3, (fore - 0.1) / fore));
       stretch(arm.lower, E, wrist);
       arm.lower.scale.y = Math.max(0.15, fore - 0.1) / 1.1;
       arm.hand.position.copy(handPos);

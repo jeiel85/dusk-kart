@@ -88,6 +88,10 @@
         <button id="btn-freeroam" class="ghost">자유 주행하며 대기</button>
         <button id="btn-leave" class="ghost">나가기</button>
       </div>
+      <details id="net-diag">
+        <summary>연결 상태</summary>
+        <div id="net-diag-body"></div>
+      </details>
     </section>
 
     <section id="scr-settings" class="panel" hidden>
@@ -156,6 +160,10 @@
   </div>
 
   <div id="boot">트랙 준비 중…</div>
+  <div id="gl-lost" hidden>
+    <p>그래픽 연결이 끊겼습니다 — 복구를 기다리는 중…</p>
+    <button type="button" hidden>새로고침</button>
+  </div>
   <script type="module" src="/src/main.js"></script>
 </body>
 </html>

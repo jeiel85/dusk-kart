@@ -1,9 +1,10 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
-import { Track, computeRacingLine } from '../src/sim/track.js';
+import { Track, computeRacingLine, SURFACE } from '../src/sim/track.js';
 import { Kart, collideKarts } from '../src/sim/kart.js';
 import { AIDriver } from '../src/sim/ai.js';
 import { RaceTracker, gridSlot } from '../src/sim/race.js';
+import { mulberry32 } from '../src/sim/math.js';
 
 const DT = 1 / 240;
 const track = new Track();
@@ -168,4 +169,111 @@ test('a kart held on the grid does not creep or reverse', () => {
   for (let i = 0; i < 240 * 6; i++) kart.step({ brake: 1, hold: true }, DT, track);
   assert.ok(kart.speed < 0.05, `speed on the grid ${kart.speed}`);
   assert.ok(Math.hypot(kart.x - x0, kart.z - z0) < 0.05, 'kart stayed in its grid box');
+});
+
+test('holding the brake at a standstill engages slow reverse, and only then', () => {
+  const kart = placeOnStraight(new Kart());
+  kart.vx = Math.sin(kart.heading) * 8;
+  kart.vz = Math.cos(kart.heading) * 8;
+  // Braking from speed never flips into reverse while still rolling forward.
+  let t = 0;
+  while (kart.forwardSpeed > 0.4 && t < 5) {
+    kart.step({ brake: 1 }, DT, track);
+    assert.equal(kart.reverse, false, `reverse engaged at ${kart.forwardSpeed} m/s`);
+    t += DT;
+  }
+  for (let i = 0; i < 240 * 4; i++) kart.step({ brake: 1 }, DT, track);
+  assert.equal(kart.reverse, true, 'reverse after holding the brake at a stop');
+  assert.ok(kart.forwardSpeed < -1 && kart.forwardSpeed >= -kart.spec.reverseMax - 0.3, `reversing at ${kart.forwardSpeed} m/s`);
+  kart.step({ throttle: 0.5 }, DT, track);
+  assert.equal(kart.reverse, false, 'throttle cancels reverse');
+});
+
+/** Same circuit, but every wheel reports the given surface. */
+function surfaceTrack(surface) {
+  const t = Object.create(track);
+  t.surfaceAt = () => surface;
+  return t;
+}
+
+function steadyCornerAy(tr) {
+  const kart = placeOnStraight(new Kart());
+  kart.vx = Math.sin(kart.heading) * 15;
+  kart.vz = Math.cos(kart.heading) * 15;
+  const x0 = kart.x, z0 = kart.z;
+  let maxAy = 0;
+  for (let i = 0; i < 240 * 12; i++) {
+    kart.step({ throttle: 0.7, steer: 0.35 }, DT, tr, { countersteer: true });
+    kart.x = x0; kart.z = z0; kart.hint = -1;
+    if (i > 240 * 4) maxAy = Math.max(maxAy, Math.abs(kart.ay));
+  }
+  return { maxAy, kart };
+}
+
+test('curbs and the apron grip less than asphalt', () => {
+  const asphalt = steadyCornerAy(surfaceTrack(SURFACE.asphalt));
+  const curb = steadyCornerAy(surfaceTrack(SURFACE.curb));
+  const apron = steadyCornerAy(surfaceTrack(SURFACE.apron));
+  assert.ok(curb.kart.rumble === 1 && Math.abs(curb.kart.surfaceGrip - SURFACE.curb.grip) < 1e-9, 'curb reported to the kart');
+  assert.ok(apron.maxAy < curb.maxAy && curb.maxAy < asphalt.maxAy, `ay asphalt ${asphalt.maxAy} curb ${curb.maxAy} apron ${apron.maxAy}`);
+  const ratio = apron.maxAy / asphalt.maxAy;
+  assert.ok(ratio > 0.7 && ratio < 0.95, `apron/asphalt cornering ratio ${ratio}`);
+});
+
+test('apron dust slows a kart on the straight', () => {
+  const top = (tr) => {
+    const kart = placeOnStraight(new Kart());
+    const x0 = kart.x, z0 = kart.z;
+    for (let i = 0; i < 240 * 10; i++) {
+      kart.step({ throttle: 1 }, DT, tr);
+      kart.x = x0; kart.z = z0; kart.hint = -1;
+    }
+    return kart.speed;
+  };
+  const onAsphalt = top(surfaceTrack(SURFACE.asphalt));
+  const onApron = top(surfaceTrack(SURFACE.apron));
+  assert.ok(onApron < onAsphalt - 0.5, `apron ${onApron} vs asphalt ${onAsphalt} m/s`);
+});
+
+function energy(k) {
+  return 0.5 * k.spec.mass * (k.vx * k.vx + k.vz * k.vz) + 0.5 * k.spec.inertia * k.omega * k.omega;
+}
+
+test('kart contacts conserve momentum and never create energy', () => {
+  const rand = mulberry32(3);
+  for (let n = 0; n < 200; n++) {
+    const a = placeOnStraight(new Kart());
+    const b = placeOnStraight(new Kart());
+    const ang = rand() * Math.PI * 2, gap = 0.6 + rand() * 1.4;
+    b.x = a.x + Math.cos(ang) * gap; b.z = a.z + Math.sin(ang) * gap;
+    b.heading = a.heading + (rand() - 0.5) * Math.PI;
+    for (const k of [a, b]) {
+      k.vx = (rand() - 0.5) * 30; k.vz = (rand() - 0.5) * 30; k.omega = (rand() - 0.5) * 4;
+    }
+    const e0 = energy(a) + energy(b);
+    const px0 = a.vx * a.spec.mass + b.vx * b.spec.mass, pz0 = a.vz * a.spec.mass + b.vz * b.spec.mass;
+    collideKarts(a, b);
+    const e1 = energy(a) + energy(b);
+    assert.ok(e1 <= e0 * (1 + 1e-9) + 1e-6, `case ${n}: energy ${e0} -> ${e1}`);
+    assert.ok(Math.abs(a.vx * a.spec.mass + b.vx * b.spec.mass - px0) < 1e-6, `case ${n}: x momentum`);
+    assert.ok(Math.abs(a.vz * a.spec.mass + b.vz * b.spec.mass - pz0) < 1e-6, `case ${n}: z momentum`);
+  }
+});
+
+test('the tyre wall absorbs most of a head-on hit', () => {
+  const kart = placeOnStraight(new Kart());
+  kart.heading += Math.PI / 2;
+  const v0 = 15;
+  kart.vx = Math.sin(kart.heading) * v0;
+  kart.vz = Math.cos(kart.heading) * v0;
+  const e0 = energy(kart);
+  let hit = false;
+  for (let i = 0; i < 240 * 2; i++) {
+    kart.step({}, DT, track);
+    if (kart.impact > 0) hit = true;
+    kart.impact = 0;
+  }
+  assert.ok(hit, 'reached the wall');
+  assert.ok(energy(kart) < e0 * 0.1, `kept ${(energy(kart) / e0 * 100).toFixed(1)}% of its energy`);
+  assert.ok(kart.speed < v0 * 0.3, `rebound speed ${kart.speed}`);
 });
