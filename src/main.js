@@ -15,7 +15,9 @@ import { rubberTexture, nameTagTexture } from './render/textures.js';
 import { KartAudio } from './audio.js';
 import { Input } from './input.js';
 import { Hud, fmtTime, escapeHtml } from './hud.js';
-import { NetSession, randomRoomCode, now } from './net.js';
+import { randomRoomCode, now, snapshotLimits, finishClaimPlausible, NO_PROGRESS } from './netcheck.js';
+import { sanitizeSettings, QUALITIES } from './settings.js';
+import { ResolutionGovernor } from './perf.js';
 
 const STEP = 1 / 240;
 const RACE_LAPS = 3;
@@ -32,28 +34,32 @@ const DEFAULTS = {
 };
 function loadSettings() {
   let saved = {};
-  try { saved = JSON.parse(localStorage.getItem('duskkart.settings') || '{}') || {}; } catch { /* corrupt or blocked storage: use defaults */ }
-  // v0.1.0 stored a single on/off "assists" flag.
-  if (saved.driveMode === undefined && saved.assists !== undefined) saved.driveMode = saved.assists ? 'normal' : 'real';
-  delete saved.assists;
-  const merged = { ...DEFAULTS, ...saved };
-  if (!DRIVE_MODES.includes(merged.driveMode)) merged.driveMode = DEFAULTS.driveMode;
-  return merged;
+  try { saved = JSON.parse(localStorage.getItem('duskkart.settings') || '{}'); } catch { /* corrupt or blocked storage: use defaults */ }
+  return sanitizeSettings(saved, DEFAULTS, { cameraModes: CAMERA_MODES, driveModes: DRIVE_MODES, colors: COLORS });
 }
 const settings = loadSettings();
 function saveSettings() {
   try { localStorage.setItem('duskkart.settings', JSON.stringify(settings)); } catch { /* storage unavailable: keep in memory */ }
 }
-if (params.get('quality')) settings.quality = params.get('quality');
+if (QUALITIES.includes(params.get('quality'))) settings.quality = params.get('quality');
 
 // ---------------------------------------------------------------- renderer
 const canvas = document.getElementById('view');
-const renderer = new THREE.WebGLRenderer({ canvas, antialias: false, powerPreference: 'high-performance' });
+let renderer;
+try {
+  renderer = new THREE.WebGLRenderer({ canvas, antialias: false, powerPreference: 'high-performance' });
+} catch (err) {
+  document.getElementById('boot').textContent = '이 브라우저/기기에서 WebGL을 사용할 수 없어 게임을 실행할 수 없습니다.';
+  throw err;
+}
 renderer.toneMapping = THREE.ACESFilmicToneMapping;
 renderer.toneMappingExposure = 1.05;
 renderer.shadowMap.enabled = settings.quality !== 'low';
 renderer.shadowMap.type = THREE.PCFSoftShadowMap;
-const pixelRatio = () => Math.min(window.devicePixelRatio || 1, settings.quality === 'high' ? 1.5 : settings.quality === 'medium' ? 1.1 : 0.85);
+// The quality preset caps the pixel ratio; the governor scales below it while
+// the frame rate is low.
+const governor = new ResolutionGovernor();
+const pixelRatio = () => Math.min(window.devicePixelRatio || 1, settings.quality === 'high' ? 1.5 : settings.quality === 'medium' ? 1.1 : 0.85) * governor.scale;
 
 const track = new Track();
 const line = computeRacingLine(track);
@@ -96,6 +102,28 @@ function resize() {
 addEventListener('resize', resize);
 resize();
 
+// Mobile GPUs drop the WebGL context under memory pressure or when the tab is
+// backgrounded. three.js rebuilds its GPU resources on restore; until then
+// the canvas is black, so say so, stop the clock in local modes, and offer a
+// reload if the browser never gives the context back.
+const glLost = document.getElementById('gl-lost');
+let glTimer = 0;
+canvas.addEventListener('webglcontextlost', () => {
+  G.glLost = true;
+  if ((G.mode === 'race' || G.mode === 'trial') && !G.paused) pause(true);
+  glLost.hidden = false;
+  glLost.querySelector('button').hidden = true;
+  clearTimeout(glTimer);
+  glTimer = setTimeout(() => { glLost.querySelector('button').hidden = false; }, 4000);
+});
+canvas.addEventListener('webglcontextrestored', () => {
+  G.glLost = false;
+  clearTimeout(glTimer);
+  glLost.hidden = true;
+  resize();
+});
+glLost.querySelector('button').onclick = () => location.reload();
+
 // ---------------------------------------------------------------- entities
 const ghostMat = new THREE.MeshBasicMaterial({ color: 0x9fe0ff, transparent: true, opacity: 0.22, depthWrite: false });
 
@@ -120,6 +148,28 @@ class Entity {
       this.tag = tag;
     }
     this.hidden = false;
+    this.spectator = false;
+  }
+
+  /** Drivers outside the current race grid are drawn as see-through ghosts. */
+  setSpectator(on) {
+    this.spectator = on;
+    this.model.root.traverse((o) => {
+      if (!o.isMesh) return;
+      if (on) {
+        o.userData.solidMat ??= o.material;
+        o.material = ghostMat;
+        o.castShadow = false;
+      } else if (o.userData.solidMat) {
+        o.material = o.userData.solidMat;
+        o.castShadow = true;
+      }
+    });
+    if (this.tag) {
+      this.tag.material.map.dispose();
+      this.tag.material.map = nameTagTexture(on ? `관전 · ${this.name}` : this.name, this.color);
+      this.tag.material.opacity = on ? 0.6 : 1;
+    }
   }
 
   pose(alpha, time) {
@@ -176,8 +226,11 @@ const G = {
   raceId: null,
   grid: [],
   remoteFin: new Map(),
+  pendingFin: new Map(), // finish claims waiting for the peer's progress to confirm them
+  goWall: null, // online: start signal on our wall clock (ms); race time follows it
   sendTimer: 0,
   wrongShown: 0,
+  glLost: false,
 };
 
 
@@ -219,9 +272,10 @@ function addPlayer(slot) {
   return e;
 }
 
-function startCountdown(goTime) {
+function startCountdown(goTime, goWall = null) {
   G.phase = 'grid';
   G.goTime = goTime;
+  G.goWall = goWall;
   G.lightsStart = goTime - 5.4 - (G.mode === 'online' ? 0 : Math.random() * 0.8);
   G.lightsShown = -1;
   G.finishAt = null;
@@ -456,18 +510,41 @@ function showResults() {
 }
 
 // ---------------------------------------------------------------- online
+let joinSeq = 0; // bumps whenever a pending join must be abandoned
+const netLimits = snapshotLimits(track);
+
 function closeOnline() {
+  joinSeq++;
   if (G.net) { G.net.leave(); G.net = null; }
   hud.netStatus('');
   G.remoteFin.clear();
+  G.pendingFin.clear();
   G.grid = [];
+  G.goWall = null;
 }
 
 function profile() {
   return { name: settings.name || 'Driver', color: settings.color, number: settings.number };
 }
 
-function joinOnline(code) {
+async function joinOnline(code) {
+  // The WebRTC stack is a separate chunk, fetched only when going online.
+  const seq = ++joinSeq;
+  const btn = document.getElementById('btn-join');
+  btn.disabled = true;
+  btn.textContent = '불러오는 중…';
+  let NetSession;
+  try {
+    ({ NetSession } = await import('./net.js'));
+  } catch (err) {
+    console.error(err);
+    hud.info('온라인 모듈을 불러오지 못했습니다 — 네트워크 연결을 확인하세요', 4000);
+    return;
+  } finally {
+    btn.disabled = false;
+    btn.textContent = '입장';
+  }
+  if (seq !== joinSeq) return; // left the online menu while loading
   closeOnline();
   clearEntities();
   G.mode = 'online';
@@ -475,29 +552,32 @@ function joinOnline(code) {
   G.tracker = null;
   G.raceId = null;
   G.paused = false;
-  const net = new NetSession(code, profile(), {
+  const net = new NetSession(code, profile(), netLimits, {
     onProfile: () => refreshLobby(),
     onPeerJoin: (id) => {
       refreshLobby();
       // Tell latecomers a race is already running (they wait in the lobby).
       if (G.net?.isHost && G.raceId && G.phase !== 'free') G.net.aRace.send({ type: 'busy', raceId: G.raceId }, { target: id });
     },
-    onPeerLeave: (id) => {
+    onPeerLeave: (id, wasHost) => {
       const e = G.entities.find((x) => x.id === id);
       if (e) { e.dispose(); G.entities.splice(G.entities.indexOf(e), 1); }
-      hud.info('드라이버가 나갔습니다');
-      refreshLobby();
+      G.pendingFin.delete(id);
+      if (wasHost && G.net) hud.info(G.net.isHost ? '호스트가 나갔습니다 — 이제 내가 호스트입니다' : '호스트가 나갔습니다 — 새 호스트로 이어갑니다', 3500);
+      else hud.info('드라이버가 나갔습니다');
+      if (!abandonEmptyRace()) refreshLobby();
     },
     onRace: (m, from) => handleRaceMsg(m, from),
-    onFinish: (m, from) => {
-      if (m?.raceId === G.raceId && Number.isFinite(m.time)) G.remoteFin.set(from, m.time);
-    },
+    onFinish: (m, from) => onRemoteFinish(m, from),
     onError: (msg) => hud.info(msg, 4000),
   });
   G.net = net;
   addPlayer(Math.floor(Math.random() * 6));
   rig.setMode(settings.camera);
   document.getElementById('lobby-code').textContent = code;
+  G.diagOpened = false;
+  document.getElementById('net-diag').open = false;
+  renderNetDiag();
   history.replaceState(null, '', `#room=${code}`);
   refreshLobby();
   ui.show('lobby');
@@ -511,9 +591,12 @@ function handleRaceMsg(m, from) {
   // Only the current host may direct races.
   if (from !== G.net.hostId && from !== G.net.selfId) return;
   if (m.type === 'start' && Array.isArray(m.grid)) {
+    const startAt = Number(m.startAt);
+    if (!Number.isFinite(startAt)) return;
     G.raceId = String(m.raceId);
     G.grid = m.grid.filter((x) => typeof x === 'string').slice(0, 8);
     G.remoteFin.clear();
+    G.pendingFin.clear();
     const mySlot = G.grid.indexOf(G.net.selfId);
     G.tracker = new RaceTracker(track, clamp(Number(m.laps) || RACE_LAPS, 1, 10));
     if (mySlot >= 0 && G.player) {
@@ -521,9 +604,8 @@ function handleRaceMsg(m, from) {
       G.player.autopilot = false;
       G.tracker.add('me', G.player.kart.s, 0);
     }
-    for (const e of G.entities) if (e.kind === 'remote') e.noCollide = !G.grid.includes(e.id);
-    const startLocal = from === G.net.selfId ? m.startAt : G.net.toLocal(m.startAt, from);
-    startCountdown(G.simTime + (startLocal - now()) / 1000);
+    const startWall = from === G.net.selfId ? startAt : G.net.toLocal(startAt, from);
+    startCountdown(G.simTime + (startWall - now()) / 1000, startWall);
     skid.clear();
     enterDriving();
     hud.info(mySlot >= 0 ? `그리드 ${mySlot + 1}번에서 출발합니다` : '관전 중 — 다음 레이스에 참가할 수 있어요', 2500);
@@ -534,9 +616,31 @@ function handleRaceMsg(m, from) {
   }
 }
 
+/**
+ * True while another peer is still driving a race we are not part of — e.g.
+ * we took over as host after the old host left, having joined too late to
+ * race. Starting now would pull them out of it, so the host has to confirm.
+ */
+function raceRunningElsewhere() {
+  const net = G.net;
+  if (!net || (G.phase !== 'free' && G.grid.includes(net.selfId))) return false;
+  for (const p of net.peers.values()) {
+    const s = p.snaps[p.snaps.length - 1];
+    if (s && (s[11] & 1) && !(s[11] & 2) && !net.stale(p.id)) return true;
+  }
+  return false;
+}
+
 function hostStart() {
   const net = G.net;
   if (!net || !net.isHost) return;
+  // Not a hard block: a driver who went idle mid-race would never finish.
+  if (raceRunningElsewhere() && !(G.confirmStartUntil > now())) {
+    G.confirmStartUntil = now() + 4000;
+    hud.info('아직 레이스 중인 드라이버가 있습니다 — 한 번 더 누르면 새 레이스를 시작합니다', 4000);
+    return;
+  }
+  G.confirmStartUntil = 0;
   const ids = net.members().filter((id) => id === net.selfId || net.peers.get(id)?.snaps.length);
   // Shuffle the grid.
   for (let i = ids.length - 1; i > 0; i--) { const j = Math.floor(Math.random() * (i + 1)); [ids[i], ids[j]] = [ids[j], ids[i]]; }
@@ -545,13 +649,55 @@ function hostStart() {
   handleRaceMsg(msg, net.selfId);
 }
 
+function onRemoteFinish(m, from) {
+  if (!G.net || !G.tracker || m?.raceId !== G.raceId || G.goWall === null) return;
+  const elapsed = (now() - G.goWall) / 1000;
+  const rtt = G.net.peers.get(from)?.rtt || 0;
+  if (!finishClaimPlausible({ time: m.time, laps: G.tracker.laps, length: track.length, elapsed, tolerance: 1.5 + rtt / 1000 })) {
+    console.warn('[net] rejected finish claim', { from, time: m.time, elapsed });
+    return;
+  }
+  // Only count it once that peer's own snapshots show it past the line.
+  G.pendingFin.set(from, { time: m.time, until: now() + 10000 });
+}
+
+/** Promote finish claims whose peer's (rate-limited) progress backs them up. */
+function confirmFinishes() {
+  if (!G.net || !G.tracker) return;
+  const need = G.tracker.laps * track.length - 60;
+  for (const [id, claim] of G.pendingFin) {
+    const progress = G.net.peers.get(id)?.progress.value;
+    if (progress !== null && progress !== undefined && progress >= need) {
+      G.remoteFin.set(id, claim.time);
+      G.pendingFin.delete(id);
+    } else if (now() > claim.until) {
+      console.warn('[net] finish claim never confirmed by progress', { id, progress, need });
+      G.pendingFin.delete(id);
+    }
+  }
+}
+
+/**
+ * When everyone on the grid has left mid-race there is nothing left to
+ * watch or finish: go back to the lobby. Returns true if it did.
+ */
+function abandonEmptyRace() {
+  const net = G.net;
+  if (!net || G.phase === 'free' || !G.raceId) return false;
+  if (G.grid.some((id) => id === net.selfId || net.peers.has(id))) return false;
+  hud.info('레이스 참가자가 모두 나가 로비로 돌아갑니다', 3500);
+  backToLobby();
+  return true;
+}
+
 function backToLobby() {
   G.phase = 'free';
   G.tracker = null;
   G.raceId = null;
   G.grid = [];
+  G.goWall = null;
+  G.pendingFin.clear();
   if (G.player) G.player.autopilot = false;
-  for (const e of G.entities) e.noCollide = false;
   hud.setLights(0, false, false);
   trackScene.setStartLights(0, false);
   refreshLobby();
@@ -576,28 +722,70 @@ function refreshLobby() {
     : '다른 드라이버를 기다리는 중… 초대 링크를 보내보세요. (혼자서도 시작할 수 있어요)';
   const start = document.getElementById('btn-start');
   start.disabled = !net.isHost;
-  start.textContent = net.isHost ? '레이스 시작' : '호스트 대기 중';
+  start.textContent = !net.isHost ? '호스트 대기 중' : raceRunningElsewhere() ? '레이스 시작 (진행 중인 레이스 있음)' : '레이스 시작';
   hud.netStatus(`ONLINE · ${escapeHtml(net.code)} · ${n}명`);
+}
+
+const PEER_STATE = { new: '준비', connecting: '연결 중', connected: '연결됨', disconnected: '끊김', failed: '실패', closed: '종료', unknown: '확인 중' };
+
+/** Lobby "연결 상태" panel: relays, TURN, per-peer link and recent errors. */
+function renderNetDiag() {
+  const net = G.net;
+  if (!net) return;
+  const d = net.diagnostics();
+  const rows = [
+    ['시그널링 릴레이', d.relaysTotal ? `${d.relaysOpen}/${d.relaysTotal} 연결` : '연결 시도 중'],
+    ['TURN 중계', d.turn ? '설정됨' : '미설정 (직접 연결만 가능)'],
+    ...d.peers.map((p) => [
+      escapeHtml(p.name ?? `${p.id.slice(0, 6)}…`),
+      [
+        PEER_STATE[p.state] ?? escapeHtml(p.state),
+        p.rtt ? `${Math.round(p.rtt)} ms` : null,
+        p.lastSeen === null ? '위치 수신 전' : p.lastSeen > 2 ? `${p.lastSeen.toFixed(0)}초째 수신 없음` : null,
+        p.rejected ? `거부된 패킷 ${p.rejected}` : null,
+      ].filter(Boolean).join(' · '),
+    ]),
+    ...d.errors.map((e) => ['오류', `${escapeHtml(e.msg)} (${e.ago.toFixed(0)}초 전)`]),
+  ];
+  const warns = [];
+  if (d.sinceJoin > 8 && d.relaysOpen === 0) warns.push('시그널링 릴레이(Nostr)에 연결하지 못했습니다. 네트워크나 광고/추적 차단 확장이 wss:// 연결을 막고 있는지 확인하세요.');
+  if (d.peers.some((p) => p.state === 'failed')) warns.push('상대와 직접 연결(WebRTC)이 실패했습니다. 회사·학교망이나 모바일 데이터처럼 엄격한 NAT에서는 TURN 중계 서버가 필요할 수 있습니다.');
+  else if (d.sinceJoin > 20 && d.relaysOpen > 0 && d.peers.length === 0) warns.push('아직 아무도 보이지 않습니다. 상대가 같은 방 코드로 들어왔는데도 계속 혼자라면 방화벽/NAT 때문에 연결이 막혔을 수 있습니다.');
+  document.getElementById('net-diag-body').innerHTML =
+    `<dl>${rows.map(([k, v]) => `<dt>${k}</dt><dd>${v}</dd>`).join('')}</dl>` +
+    warns.map((w) => `<p class="warn">${w}</p>`).join('');
+  // Open the panel by itself the first time something looks wrong.
+  if (warns.length && !G.diagOpened) { G.diagOpened = true; document.getElementById('net-diag').open = true; }
 }
 
 function syncRemotes(dt) {
   const net = G.net;
   if (!net) return;
+  G.diagTimer = (G.diagTimer || 0) + dt;
+  if (G.diagTimer >= 1 && ui.current === 'lobby') { G.diagTimer = 0; renderNetDiag(); refreshLobby(); }
   for (const [id, peer] of net.peers) {
     if (!peer.profile || !peer.snaps.length) continue;
     let e = G.entities.find((x) => x.id === id);
     if (!e) {
       e = new Entity({ id, name: peer.profile.name, color: peer.profile.color, number: peer.profile.number, suit: '#333', kind: 'remote' });
-      e.noCollide = G.phase !== 'free' && !G.grid.includes(id);
       G.entities.push(e);
     }
     const p = net.sample(id);
     if (!p) continue;
+    // A kart that jumps (reset, reconnect, forged position) must not land a
+    // hit on whoever is standing there.
+    if (e.placed && Math.hypot(p.x - e.kart.x, p.z - e.kart.z) > 4) e.warpUntil = now() + 1000;
+    e.placed = true;
     Object.assign(e.kart, { x: p.x, z: p.z, heading: p.heading, vx: p.vx, vz: p.vz, omega: p.omega, steer: p.steer, rpm: p.rpm, throttle: p.throttle, s: p.s, lateral: p.lateral });
     e.kart.progress = p.progress;
+    // Drivers who joined after the start are not in this race.
+    const spectator = G.phase !== 'free' && !G.grid.includes(id);
+    if (spectator !== e.spectator) e.setSpectator(spectator);
+    e.noCollide = spectator || now() < (e.warpUntil || 0);
     e.hidden = net.stale(id, 6000);
     e.model.root.visible = !e.hidden;
   }
+  confirmFinishes();
   // Broadcast our kart at 20 Hz.
   G.sendTimer += dt;
   if (G.sendTimer >= 0.05 && G.player) {
@@ -605,7 +793,7 @@ function syncRemotes(dt) {
     const k = G.player.kart;
     const en = G.tracker?.entries.get('me');
     const flags = (G.grid.includes(net.selfId) ? 1 : 0) | (en?.finished ? 2 : 0);
-    net.sendState([now(), k.x, k.z, k.heading, k.vx, k.vz, k.omega, k.steer, k.rpm, k.throttle, en ? en.progress : -1e6, flags, k.s, k.lateral]);
+    net.sendState([now(), k.x, k.z, k.heading, k.vx, k.vz, k.omega, k.steer, k.rpm, k.throttle, en ? en.progress : NO_PROGRESS, flags, k.s, k.lateral]);
   }
 }
 
@@ -710,7 +898,10 @@ document.getElementById('btn-join').onclick = () => {
   let code = document.getElementById('in-room').value.trim().toUpperCase().replace(/[^A-Z0-9]/g, '');
   if (code.length !== 5) code = randomRoomCode();
   audio.start();
-  joinOnline(code);
+  joinOnline(code).catch((err) => {
+    console.error(err);
+    hud.info('온라인 연결을 시작하지 못했습니다', 4000);
+  });
 };
 document.getElementById('btn-start').onclick = () => hostStart();
 document.getElementById('btn-freeroam').onclick = () => enterDriving();
@@ -775,10 +966,27 @@ document.addEventListener('visibilitychange', () => {
 let last = performance.now();
 const listener = { position: new THREE.Vector3(), forward: new THREE.Vector3() };
 
+/**
+ * Online races run on the shared wall clock, not on simTime: simTime stalls
+ * with the tab (hidden, throttled, dropped frames) and would otherwise start
+ * the lights late and credit the stalled seconds to the lap times.
+ */
+function syncRaceClock() {
+  if (G.mode !== 'online' || G.goWall === null) return;
+  const goTime = G.simTime - (now() - G.goWall) / 1000;
+  if (G.phase === 'grid' || Math.abs(goTime - G.goTime) > 0.05) {
+    G.goTime = goTime;
+    G.lightsStart = goTime - 5.4;
+  }
+}
+
 function frame(nowMs) {
   requestAnimationFrame(frame);
-  const dt = Math.min(0.1, Math.max(0, (nowMs - last) / 1000));
+  const rawDt = (nowMs - last) / 1000;
+  const dt = Math.min(0.1, Math.max(0, rawDt));
   last = nowMs;
+  // A hidden page has no meaningful frame rate (and dev tools step it by hand).
+  if (!G.glLost && !document.hidden && governor.sample(rawDt) !== null) resize();
   const followK = G.follow?.kart;
   input.update(dt, followK ? followK.speed : 0);
 
@@ -793,6 +1001,7 @@ function frame(nowMs) {
   if (input.consume('mute')) hud.info(audio.toggleMute() ? '음소거' : '소리 켜짐');
   input.endFrame();
 
+  syncRaceClock();
   if (!G.paused) {
     for (const e of G.entities) if (e.kart.impact !== undefined) e.kart.impact = 0;
     G.acc += dt;
@@ -849,7 +1058,7 @@ function frame(nowMs) {
   trackScene.update(G.simTime);
   updateHud();
   hud.tick();
-  post.render(G.simTime, rig.lens(f ? f.kart : { speed: 0 }, settings));
+  if (!G.glLost) post.render(G.simTime, rig.lens(f ? f.kart : { speed: 0 }, settings));
 }
 
 function updateRaceFlow() {
@@ -877,14 +1086,22 @@ function updateRaceFlow() {
     hud.setLights(0, false, false);
   }
 
+  // Online spectators never finish themselves: show them the table once
+  // every racer still connected is done.
+  const spectating = G.mode === 'online' && G.phase === 'go' && G.finishAt === null && G.net && !G.grid.includes(G.net.selfId);
+  if (spectating) {
+    const rows = raceRows();
+    if (rows.length && rows.every((r) => r.finished)) G.finishAt = t - 4;
+  }
   if (G.phase === 'go' && G.finishAt !== null && G.mode !== 'trial') {
     const allDone = raceRows().every((r) => r.finished);
     if (!G.resultsShown) {
       if (allDone || t - G.finishAt > 4) showResults();
     } else if (ui.current === 'results' && !G.finalShown) {
       // Keep the table live while the rest of the field finishes.
+      // The final table must always be drawn, even within the same tick.
       if (allDone) G.finalShown = true;
-      if (Math.floor(t * 2) !== G.lastResTick) { G.lastResTick = Math.floor(t * 2); showResults(); }
+      if (allDone || Math.floor(t * 2) !== G.lastResTick) { G.lastResTick = Math.floor(t * 2); showResults(); }
     }
   }
 
@@ -943,6 +1160,6 @@ if (params.get('mode') === 'race' || params.get('mode') === 'trial') startLocal(
 else if (params.get('demo')) ui.hide();
 else if (roomInHash) { fillOnline(); ui.show('online'); }
 else ui.show('main');
-if (params.get('cam')) rig.setMode(params.get('cam'));
+if (CAMERA_MODES.includes(params.get('cam'))) rig.setMode(params.get('cam'));
 requestAnimationFrame((t) => { last = t; frame(t); });
 setTimeout(() => document.getElementById('boot').classList.add('gone'), 300);

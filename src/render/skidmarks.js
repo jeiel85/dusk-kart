@@ -55,14 +55,20 @@ export class SkidMarks {
     const a = Math.min(0.75, strength);
     this.alpha.set([a, a, a, a], k * 4);
     this.next = (k + 1) % this.max;
-    this.last.set(key, { x, z });
-    this.geo.attributes.position.needsUpdate = true;
-    this.geo.attributes.aAlpha.needsUpdate = true;
+    prev.x = x; prev.z = z;
+    // Upload only the quad just written, not the whole ring buffer.
+    const pos = this.geo.attributes.position, al = this.geo.attributes.aAlpha;
+    pos.addUpdateRange(k * 12, 12);
+    pos.needsUpdate = true;
+    al.addUpdateRange(k * 4, 4);
+    al.needsUpdate = true;
   }
 
   clear() {
     this.alpha.fill(0);
-    this.geo.attributes.aAlpha.needsUpdate = true;
+    const al = this.geo.attributes.aAlpha;
+    al.clearUpdateRanges(); // no ranges = upload the whole buffer
+    al.needsUpdate = true;
     this.last.clear();
   }
 }

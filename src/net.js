@@ -1,10 +1,12 @@
-import { joinRoom, selfId } from 'trystero';
+import { joinRoom, selfId, getRelaySockets } from 'trystero';
+import { now, sanitizeSnapshot, ProgressGuard } from './netcheck.js';
 
 /**
  * Serverless multiplayer: browsers find each other through public Nostr
  * relays (Trystero) and then talk directly over WebRTC data channels.
  * Every client simulates its own kart and broadcasts snapshots; the peer
  * with the smallest id acts as race director (start signal, grid order).
+ * This module is loaded on demand when the player goes online.
  */
 export const APP_ID = 'dusk-kart.lumen-park.v1';
 const INTERP_DELAY = 110; // ms of buffering for smooth remote karts
@@ -20,26 +22,22 @@ function turnConfig() {
   }];
 }
 
-export const now = () => performance.timeOrigin + performance.now();
-
-export function randomRoomCode() {
-  const abc = 'ABCDEFGHJKLMNPQRSTUVWXYZ23456789';
-  let s = '';
-  const buf = new Uint32Array(5);
-  crypto.getRandomValues(buf);
-  for (const v of buf) s += abc[v % abc.length];
-  return s;
-}
-
 export class NetSession {
-  constructor(code, profile, handlers = {}) {
+  /**
+   * @param limits snapshot validation limits from `snapshotLimits(track)`
+   */
+  constructor(code, profile, limits, handlers = {}) {
     this.code = code;
     this.profile = profile;
+    this.limits = limits;
     this.handlers = handlers;
     this.selfId = selfId;
     this.peers = new Map();
-    this.room = joinRoom({ appId: APP_ID, turnConfig: turnConfig() }, `room-${code}`, {
-      onJoinError: (d) => handlers.onError?.(`연결 실패 (${d.error || 'WebRTC'}) — 방화벽/NAT 환경일 수 있습니다.`),
+    this.joinedAt = now();
+    this.turn = turnConfig();
+    this.errors = [];
+    this.room = joinRoom({ appId: APP_ID, turnConfig: this.turn }, `room-${code}`, {
+      onJoinError: (d) => this.error(`연결 실패 (${d.error || 'WebRTC'}) — 방화벽/NAT 환경일 수 있습니다.`),
     });
 
     const act = (name) => this.room.makeAction(name);
@@ -57,8 +55,9 @@ export class NetSession {
       handlers.onPeerJoin?.(id);
     };
     this.room.onPeerLeave = (id) => {
+      const wasHost = id === this.hostId;
       this.peers.delete(id);
-      handlers.onPeerLeave?.(id);
+      handlers.onPeerLeave?.(id, wasHost);
     };
     this.aProfile.onMessage = (p, { peerId }) => {
       const peer = this.peer(peerId);
@@ -69,8 +68,11 @@ export class NetSession {
       };
       handlers.onProfile?.(peerId, peer.profile);
     };
-    this.aPing.onMessage = (m, { peerId }) => this.aPong.send({ t0: m.t0, t1: now() }, { target: peerId });
+    this.aPing.onMessage = (m, { peerId }) => {
+      if (Number.isFinite(m?.t0)) this.aPong.send({ t0: m.t0, t1: now() }, { target: peerId });
+    };
     this.aPong.onMessage = (m, { peerId }) => {
+      if (!Number.isFinite(m?.t0) || !Number.isFinite(m?.t1)) return;
       const t = now();
       const rtt = t - m.t0;
       const peer = this.peer(peerId);
@@ -80,12 +82,18 @@ export class NetSession {
         peer.rtt = rtt;
       }
     };
-    this.aState.onMessage = (s, { peerId }) => {
-      if (!Array.isArray(s) || s.length < 14 || !s.every(Number.isFinite)) return;
+    this.aState.onMessage = (raw, { peerId }) => {
       const peer = this.peer(peerId);
+      const s = sanitizeSnapshot(raw, this.limits);
+      if (!s) { peer.rejected++; return; }
+      // Snapshots must move forward on the sender's clock.
+      const last = peer.snaps[peer.snaps.length - 1];
+      if (last && s[0] <= last[0]) { peer.rejected++; return; }
+      const t = now();
+      s[10] = peer.progress.accept(s[10], t);
       peer.snaps.push(s);
       if (peer.snaps.length > 30) peer.snaps.shift();
-      peer.lastSeen = now();
+      peer.lastSeen = t;
     };
     this.aRace.onMessage = (m, { peerId }) => handlers.onRace?.(m, peerId);
     this.aFin.onMessage = (m, { peerId }) => handlers.onFinish?.(m, peerId);
@@ -95,10 +103,17 @@ export class NetSession {
     }, 2000);
   }
 
+  error(msg) {
+    this.errors.push({ t: now(), msg });
+    if (this.errors.length > 5) this.errors.shift();
+    console.warn('[net]', msg);
+    this.handlers.onError?.(msg);
+  }
+
   peer(id) {
     let p = this.peers.get(id);
     if (!p) {
-      p = { id, profile: null, snaps: [], offset: 0, bestRtt: Infinity, rtt: 0, lastSeen: now() };
+      p = { id, profile: null, snaps: [], offset: 0, bestRtt: Infinity, rtt: 0, lastSeen: now(), rejected: 0, progress: new ProgressGuard() };
       this.peers.set(id, p);
     }
     return p;
@@ -161,6 +176,31 @@ export class NetSession {
   stale(peerId, ms = 4000) {
     const p = this.peers.get(peerId);
     return !p || now() - p.lastSeen > ms;
+  }
+
+  /** Snapshot of the connection state for the lobby's diagnostics panel. */
+  diagnostics() {
+    let sockets = {};
+    try { sockets = getRelaySockets() || {}; } catch { /* relay manager not ready yet */ }
+    const socks = Object.values(sockets);
+    let conns = {};
+    try { conns = this.room.getPeers() || {}; } catch { /* room already left */ }
+    const t = now();
+    return {
+      relaysOpen: socks.filter((s) => s.readyState === 1).length,
+      relaysTotal: socks.length,
+      turn: Boolean(this.turn),
+      sinceJoin: (t - this.joinedAt) / 1000,
+      peers: [...this.peers.values()].map((p) => ({
+        id: p.id,
+        name: p.profile?.name ?? null,
+        state: conns[p.id]?.connectionState ?? 'unknown',
+        rtt: p.rtt,
+        lastSeen: p.snaps.length ? (t - p.lastSeen) / 1000 : null,
+        rejected: p.rejected + p.progress.violations,
+      })),
+      errors: this.errors.map((e) => ({ ago: (t - e.t) / 1000, msg: e.msg })),
+    };
   }
 
   leave() {
