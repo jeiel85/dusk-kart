@@ -70,6 +70,7 @@
       <label>카트 색상 <span id="colors" class="swatches"></span></label>
       <label>방 코드 <input id="in-room" maxlength="5" autocomplete="off" placeholder="비워두면 새 방 생성" style="text-transform:uppercase" /></label>
       <p class="note">같은 방 코드를 입력한 사람끼리 브라우저 간 직접(WebRTC) 연결됩니다. 매칭은 공개 Nostr 릴레이를 사용하며 게임 서버는 없습니다.</p>
+      <p class="note warn" id="online-error" role="alert" hidden></p>
       <div class="menu-row">
         <button id="btn-join">입장</button>
         <button data-go="main" class="ghost">뒤로</button>

@@ -55,16 +55,31 @@ test('progress may not grow faster than a kart can drive', () => {
   let t = 50, p = -20;
   for (let i = 0; i < 100; i++) { t += 50; p += 1.2; assert.equal(g.accept(p, t), p, 'honest 24 m/s'); }
   assert.equal(g.violations, 0);
-  // A jump of a whole lap is capped at speed limit + slack.
+  // A jump of a whole lap is capped at the accrued credit (at most one burst).
+  const before = g.value;
   const capped = g.accept(p + track.length, t + 50);
-  assert.ok(capped <= p + MAX_SPEED * 0.05 + g.slack + 1e-9, `capped to ${capped}`);
+  assert.ok(capped <= before + g.burst + 1e-9, `capped to ${capped}`);
   assert.equal(g.violations, 1);
   // A peer jumping from the lobby straight to lap 3 is held at the line.
   const lobby = new ProgressGuard();
   lobby.accept(NO_PROGRESS, 0);
-  assert.ok(lobby.accept(track.length * 2.5, 50) <= lobby.slack);
+  assert.ok(lobby.accept(track.length * 2.5, 50) <= 4);
   // Going backwards is always allowed (reversing, next race).
   assert.equal(g.accept(-30, t + 100), -30);
+});
+
+test('flooding snapshots cannot outrun the speed limit', () => {
+  // A stationary or modified peer claiming +10 m per packet, at 20 Hz and at
+  // 1 kHz: over 60 s neither may gain more than 60 s at the limit + one burst.
+  for (const hz of [20, 1000]) {
+    const g = new ProgressGuard();
+    g.accept(NO_PROGRESS, 0);
+    g.accept(-10, 0);
+    let claimed = -10;
+    for (let i = 1; i <= hz * 60; i++) { claimed += 10; g.accept(claimed, (i * 1000) / hz); }
+    assert.ok(g.value + 10 <= MAX_SPEED * 60 + g.burst + 1e-6, `${hz} Hz reached ${g.value} m`);
+    assert.ok(g.value < minRaceTime(3, track.length) * MAX_SPEED, 'still short of a 3-lap finish after 60 s');
+  }
 });
 
 test('finish claims must fit the race clock and the track length', () => {

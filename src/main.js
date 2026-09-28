@@ -531,6 +531,8 @@ async function joinOnline(code) {
   // The WebRTC stack is a separate chunk, fetched only when going online.
   const seq = ++joinSeq;
   const btn = document.getElementById('btn-join');
+  const errBox = document.getElementById('online-error');
+  errBox.hidden = true;
   btn.disabled = true;
   btn.textContent = '불러오는 중…';
   let NetSession;
@@ -538,13 +540,16 @@ async function joinOnline(code) {
     ({ NetSession } = await import('./net.js'));
   } catch (err) {
     console.error(err);
-    hud.info('온라인 모듈을 불러오지 못했습니다 — 네트워크 연결을 확인하세요', 4000);
+    // The HUD is hidden behind the menus, so report it on the form itself.
+    errBox.textContent = '온라인 모듈을 불러오지 못했습니다 — 네트워크 연결을 확인한 뒤 다시 입장해 보세요.';
+    errBox.hidden = false;
     return;
   } finally {
     btn.disabled = false;
     btn.textContent = '입장';
   }
-  if (seq !== joinSeq) return; // left the online menu while loading
+  // Abandoned while loading: another mode started, or the player left the form.
+  if (seq !== joinSeq || ui.current !== 'online') return;
   closeOnline();
   clearEntities();
   G.mode = 'online';
