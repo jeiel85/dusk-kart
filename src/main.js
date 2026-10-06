@@ -710,6 +710,8 @@ function backToLobby() {
   G.pendingFin.clear();
   if (G.player) G.player.autopilot = false;
   hud.setLights(0, false, false);
+  // Hints shown for an abandoned countdown only fade after GO, which never comes.
+  hud.showKeys(false);
   trackScene.setStartLights(0, false);
   refreshLobby();
   ui.show('lobby');
