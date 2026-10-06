@@ -17,10 +17,33 @@ export function buttonTarget(saved, fullscreen, portraitNow) {
 }
 
 /**
+ * Resolves once the lock holds: when lock() settles, or when the screen has
+ * turned to `target` — Android Chrome (154) rotates portrait → landscape but
+ * never settles that lock() promise. Rejects if neither happens in `ms`.
+ */
+function lockSettled(o, target, ms) {
+  return new Promise((resolve, reject) => {
+    const turned = () => String(o.type || '').startsWith(target);
+    let done = false;
+    const finish = (fn, v) => {
+      if (done) return;
+      done = true;
+      clearTimeout(timer);
+      o.removeEventListener?.('change', onChange);
+      fn(v);
+    };
+    const onChange = () => { if (turned()) finish(resolve); };
+    o.addEventListener?.('change', onChange);
+    const timer = setTimeout(() => (turned() ? finish(resolve) : finish(reject, new Error('orientation lock timed out'))), ms);
+    o.lock(target).then(() => finish(resolve), (e) => finish(reject, e));
+  });
+}
+
+/**
  * @param target 'auto' | 'landscape' | 'portrait'
  * @returns {Promise<boolean>} false when the browser refuses the lock
  */
-export async function applyOrientation(target, doc = document, scr = screen) {
+export async function applyOrientation(target, doc = document, scr = screen, timeoutMs = 2000) {
   const o = scr.orientation;
   if (target === 'auto') {
     // unlock() throws where locking was never supported; nothing to release then.
@@ -34,7 +57,7 @@ export async function applyOrientation(target, doc = document, scr = screen) {
       await doc.documentElement.requestFullscreen({ navigationUI: 'hide' });
       entered = true;
     }
-    await o.lock(target);
+    await lockSettled(o, target, timeoutMs);
     return true;
   } catch {
     // Don't leave the player in a fullscreen they only got as a means to the lock.

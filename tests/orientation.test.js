@@ -2,7 +2,7 @@ import test from 'node:test';
 import assert from 'node:assert/strict';
 import { applyOrientation, buttonTarget } from '../src/orientation.js';
 
-function fakeEnv({ lock = 'ok', fullscreen = 'ok', unlockThrows = false } = {}) {
+function fakeEnv({ lock = 'ok', fullscreen = 'ok', unlockThrows = false, type = 'portrait-primary' } = {}) {
   const calls = [];
   const doc = {
     fullscreenElement: null,
@@ -15,10 +15,25 @@ function fakeEnv({ lock = 'ok', fullscreen = 'ok', unlockThrows = false } = {}) 
       },
     },
   };
+  const listeners = new Set();
   const orientation = lock === 'missing' ? {} : {
-    lock: async (t) => { calls.push(['lock', t]); if (lock !== 'ok') throw new Error('NotSupportedError'); },
+    type,
+    addEventListener: (ev, fn) => listeners.add(fn),
+    removeEventListener: (ev, fn) => listeners.delete(fn),
+    lock: (t) => {
+      calls.push(['lock', t]);
+      if (lock === 'reject') return Promise.reject(new Error('NotSupportedError'));
+      if (lock === 'hang-turns') {
+        // Android Chrome: the screen turns, the promise never settles.
+        setTimeout(() => { orientation.type = `${t}-primary`; for (const fn of [...listeners]) fn(); }, 5);
+        return new Promise(() => {});
+      }
+      if (lock === 'hang') return new Promise(() => {});
+      return Promise.resolve();
+    },
     unlock: () => { calls.push(['unlock']); if (unlockThrows) throw new Error('unsupported'); },
   };
+  orientation.listeners = listeners;
   return { doc, scr: { orientation }, calls };
 }
 
@@ -54,6 +69,19 @@ test('browsers that refuse report false instead of throwing', async () => {
   assert.equal(refused.doc.fullscreenElement, null);
   const iosLike = { doc: fakeEnv().doc, scr: {} };
   assert.equal(await applyOrientation('portrait', iosLike.doc, iosLike.scr), false);
+});
+
+test('a lock() that never settles counts once the screen has turned', async () => {
+  const e = fakeEnv({ lock: 'hang-turns' });
+  assert.equal(await applyOrientation('landscape', e.doc, e.scr, 200), true);
+  assert.equal(e.scr.orientation.listeners.size, 0, 'change listener removed');
+  // Never settles and never turns: give up, and leave the fullscreen it entered.
+  const stuck = fakeEnv({ lock: 'hang' });
+  assert.equal(await applyOrientation('landscape', stuck.doc, stuck.scr, 30), false);
+  assert.deepEqual(stuck.calls.map((c) => c[0]), ['fullscreen', 'lock', 'exit']);
+  // Already showing the target when the timeout hits: that's a hold, not a failure.
+  const already = fakeEnv({ lock: 'hang', type: 'landscape-secondary' });
+  assert.equal(await applyOrientation('landscape', already.doc, already.scr, 30), true);
 });
 
 test('auto releases the lock, even where unlock is unsupported', async () => {
