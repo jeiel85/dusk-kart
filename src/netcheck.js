@@ -115,6 +115,16 @@ export function minRaceTime(laps, length) {
 }
 
 /**
+ * A peer's best lap as reported with its finish: a finite lap no faster than
+ * the speed limit allows and no longer than the whole race. Anything else is
+ * dropped (shown as no time), never trusted.
+ */
+export function plausibleBestLap(best, { time, length }) {
+  if (!Number.isFinite(best) || !Number.isFinite(time)) return null;
+  return best >= minRaceTime(1, length) && best <= time ? best : null;
+}
+
+/**
  * Whether a peer's finish time is believable.
  * @param elapsed seconds since the shared start signal when the claim arrived
  * @param tolerance allowance for latency and clock-sync error (s)

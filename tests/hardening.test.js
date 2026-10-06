@@ -3,7 +3,7 @@ import assert from 'node:assert/strict';
 import { Track } from '../src/sim/track.js';
 import { gridSlot } from '../src/sim/race.js';
 import {
-  sanitizeSnapshot, snapshotLimits, ProgressGuard, finishClaimPlausible, minRaceTime, NO_PROGRESS, MAX_SPEED,
+  sanitizeSnapshot, snapshotLimits, ProgressGuard, finishClaimPlausible, plausibleBestLap, minRaceTime, NO_PROGRESS, MAX_SPEED,
 } from '../src/netcheck.js';
 import { sanitizeSettings } from '../src/settings.js';
 import { ResolutionGovernor } from '../src/perf.js';
@@ -173,4 +173,15 @@ test('a real race with contact never trips the network checks', async () => {
     assert.ok(finishClaimPlausible({ time: fin, laps: 2, length: track.length, elapsed: fin + 0.2 }), `finish ${fin}`);
   }
   assert.ok(sent > 1000);
+});
+
+test('a peer best lap is kept only when it fits its own race', () => {
+  const length = track.length;
+  const lap = minRaceTime(1, length);
+  assert.equal(plausibleBestLap(57.3, { time: 176.7, length }), 57.3);
+  assert.equal(plausibleBestLap(lap, { time: 3 * lap, length }), lap, 'flat-out lap at the speed limit');
+  assert.equal(plausibleBestLap(lap - 0.01, { time: 176.7, length }), null, 'faster than the speed limit allows');
+  assert.equal(plausibleBestLap(200, { time: 176.7, length }), null, 'longer than the whole race');
+  for (const junk of [undefined, null, NaN, Infinity, '57', {}]) assert.equal(plausibleBestLap(junk, { time: 176.7, length }), null);
+  assert.equal(plausibleBestLap(57.3, { time: NaN, length }), null);
 });

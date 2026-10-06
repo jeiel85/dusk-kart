@@ -15,7 +15,7 @@ import { rubberTexture, nameTagTexture } from './render/textures.js';
 import { KartAudio } from './audio.js';
 import { Input } from './input.js';
 import { Hud, fmtTime, escapeHtml } from './hud.js';
-import { randomRoomCode, now, snapshotLimits, finishClaimPlausible, NO_PROGRESS } from './netcheck.js';
+import { randomRoomCode, now, snapshotLimits, finishClaimPlausible, plausibleBestLap, NO_PROGRESS } from './netcheck.js';
 import { sanitizeSettings, QUALITIES } from './settings.js';
 import { applyOrientation, buttonTarget, ORIENTATION_LABELS } from './orientation.js';
 import { ResolutionGovernor, QualityTuner, QUALITY_STEPS } from './perf.js';
@@ -234,6 +234,7 @@ const G = {
   raceId: null,
   grid: [],
   remoteFin: new Map(),
+  remoteBest: new Map(),
   pendingFin: new Map(), // finish claims waiting for the peer's progress to confirm them
   goWall: null, // online: start signal on our wall clock (ms); race time follows it
   sendTimer: 0,
@@ -443,7 +444,7 @@ function onRaceEvent(e, ev, rt) {
     e.autopilot = true;
     if (!e.ai) e.ai = new AIDriver(track, line, { pace: 0.8, seed: 5 });
     G.finishAt = G.simTime;
-    if (G.mode === 'online' && G.net) G.net.sendFinish({ raceId: G.raceId, time: rt });
+    if (G.mode === 'online' && G.net) G.net.sendFinish({ raceId: G.raceId, time: rt, best: entry.bestLap });
   }
 }
 
@@ -483,7 +484,7 @@ function raceRows() {
         const e = G.entities.find((x) => x.id === id);
         if (!e) continue;
         const fin = G.remoteFin.get(id);
-        rows.push({ id, name: e.name, color: e.color, progress: e.kart.progress ?? -1e9, finished: fin !== undefined, time: fin, best: e.kart.best ?? null });
+        rows.push({ id, name: e.name, color: e.color, progress: e.kart.progress ?? -1e9, finished: fin !== undefined, time: fin, best: G.remoteBest.get(id) ?? null });
       }
     }
   } else if (G.tracker) {
@@ -529,6 +530,7 @@ function closeOnline() {
   if (G.net) { G.net.leave(); G.net = null; }
   hud.netStatus('');
   G.remoteFin.clear();
+  G.remoteBest.clear();
   G.pendingFin.clear();
   G.grid = [];
   G.goWall = null;
@@ -559,8 +561,9 @@ async function joinOnline(code) {
     btn.disabled = false;
     btn.textContent = '입장';
   }
-  // Abandoned while loading: another mode started, or the player left the form.
-  if (seq !== joinSeq || ui.current !== 'online') return;
+  // Abandoned while loading: another mode started, or the player left the form
+  // (a rejoin starts from the lobby).
+  if (seq !== joinSeq || (ui.current !== 'online' && ui.current !== 'lobby')) return;
   closeOnline();
   clearEntities();
   G.mode = 'online';
@@ -612,6 +615,7 @@ function handleRaceMsg(m, from) {
     G.raceId = String(m.raceId);
     G.grid = m.grid.filter((x) => typeof x === 'string').slice(0, 8);
     G.remoteFin.clear();
+    G.remoteBest.clear();
     G.pendingFin.clear();
     const mySlot = G.grid.indexOf(G.net.selfId);
     G.tracker = new RaceTracker(track, clamp(Number(m.laps) || RACE_LAPS, 1, 10));
@@ -674,7 +678,7 @@ function onRemoteFinish(m, from) {
     return;
   }
   // Only count it once that peer's own snapshots show it past the line.
-  G.pendingFin.set(from, { time: m.time, until: now() + 10000 });
+  G.pendingFin.set(from, { time: m.time, best: plausibleBestLap(m.best, { time: m.time, length: track.length }), until: now() + 10000 });
 }
 
 /** Promote finish claims whose peer's (rate-limited) progress backs them up. */
@@ -685,6 +689,7 @@ function confirmFinishes() {
     const progress = G.net.peers.get(id)?.progress.value;
     if (progress !== null && progress !== undefined && progress >= need) {
       G.remoteFin.set(id, claim.time);
+      if (claim.best !== null) G.remoteBest.set(id, claim.best);
       G.pendingFin.delete(id);
     } else if (now() > claim.until) {
       console.warn('[net] finish claim never confirmed by progress', { id, progress, need });
@@ -768,7 +773,10 @@ function renderNetDiag() {
   const warns = [];
   if (d.sinceJoin > 8 && d.relaysOpen === 0) warns.push('시그널링 릴레이(Nostr)에 연결하지 못했습니다. 네트워크나 광고/추적 차단 확장이 wss:// 연결을 막고 있는지 확인하세요.');
   if (d.peers.some((p) => p.state === 'failed')) warns.push('상대와 직접 연결(WebRTC)이 실패했습니다. 회사·학교망이나 모바일 데이터처럼 엄격한 NAT에서는 TURN 중계 서버가 필요할 수 있습니다.');
-  else if (d.sinceJoin > 20 && d.relaysOpen > 0 && d.peers.length === 0) warns.push('아직 아무도 보이지 않습니다. 상대가 같은 방 코드로 들어왔는데도 계속 혼자라면 방화벽/NAT 때문에 연결이 막혔을 수 있습니다.');
+  else if (d.sinceJoin > 20 && d.relaysOpen > 0 && d.peers.length === 0) {
+    warns.push('아직 아무도 보이지 않습니다. 상대가 같은 방 코드로 들어왔는데도 계속 혼자라면 <b>다시 연결</b>을 눌러 보세요(입장 직후 상대를 놓치는 경우가 있습니다). 그래도 안 되면 방화벽/NAT 때문에 연결이 막혔을 수 있습니다.'
+      + '<br><button type="button" class="ghost" data-rejoin>다시 연결</button>');
+  }
   document.getElementById('net-diag-body').innerHTML =
     `<dl>${rows.map(([k, v]) => `<dt>${k}</dt><dd>${v}</dd>`).join('')}</dl>` +
     warns.map((w) => `<p class="warn">${w}</p>`).join('');
@@ -952,6 +960,15 @@ document.getElementById('btn-join').onclick = () => {
   });
 };
 document.getElementById('btn-start').onclick = () => hostStart();
+// Leave and re-enter the same room: a fresh signalling session finds peers a
+// stuck one missed. Only from the lobby, never mid-race.
+document.getElementById('net-diag-body').addEventListener('click', (e) => {
+  if (!e.target.closest('[data-rejoin]') || !G.net || G.phase !== 'free') return;
+  joinOnline(G.net.code).catch((err) => {
+    console.error(err);
+    hud.info('온라인 연결을 시작하지 못했습니다', 4000);
+  });
+});
 document.getElementById('btn-freeroam').onclick = () => { enterDriving(); hud.showKeys(true, 8000); };
 document.getElementById('btn-leave').onclick = toMenu;
 document.getElementById('btn-copy').onclick = async () => {
