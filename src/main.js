@@ -1005,7 +1005,7 @@ setDriveMode(settings.driveMode);
 document.getElementById('set-volume').oninput = (e) => { settings.volume = Number(e.target.value); audio.setVolume(settings.volume); saveSettings(); };
 document.getElementById('set-orient').onchange = (e) => setOrientation(e.target.value);
 document.getElementById('set-quality').onchange = (e) => {
-  // "Auto" keeps the current preset and lets the tuner move it from the next race on.
+  // "Auto" keeps the current preset; the tuner starts watching from the next load.
   if (e.target.value === 'auto') {
     settings.qualityAuto = true;
     settings.qualityCeiling = 'high';
