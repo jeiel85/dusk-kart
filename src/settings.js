@@ -4,6 +4,7 @@
  * is checked against what the UI can produce and falls back to its default.
  */
 export const QUALITIES = ['low', 'medium', 'high'];
+export const ORIENTATIONS = ['auto', 'landscape', 'portrait'];
 
 const inList = (list) => (v) => list.includes(v);
 const numberIn = (min, max) => (v) => typeof v === 'number' && Number.isFinite(v) && v >= min && v <= max;
@@ -25,6 +26,7 @@ export function sanitizeSettings(saved, defaults, { cameraModes, driveModes, col
     driveMode: inList(driveModes),
     volume: numberIn(0, 1),
     quality: inList(QUALITIES),
+    orientation: inList(ORIENTATIONS),
     name: (v) => typeof v === 'string' && v.length <= 14,
     color: (v) => colors.includes(v),
     number: (v) => Number.isInteger(v) && v >= 1 && v <= 99,

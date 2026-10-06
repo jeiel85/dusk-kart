@@ -17,6 +17,7 @@ import { Input } from './input.js';
 import { Hud, fmtTime, escapeHtml } from './hud.js';
 import { randomRoomCode, now, snapshotLimits, finishClaimPlausible, NO_PROGRESS } from './netcheck.js';
 import { sanitizeSettings, QUALITIES } from './settings.js';
+import { applyOrientation, toggledOrientation, ORIENTATION_LABELS } from './orientation.js';
 import { ResolutionGovernor } from './perf.js';
 
 const STEP = 1 / 240;
@@ -30,7 +31,7 @@ const isTouch = matchMedia('(pointer: coarse)').matches || navigator.maxTouchPoi
 // ---------------------------------------------------------------- settings
 const DEFAULTS = {
   camera: 'helmet', motionBlur: 1, cameraShake: 1, lensDistortion: true, driveMode: 'easy', volume: 0.8,
-  quality: isTouch ? 'low' : 'high', name: '', color: COLORS[0], number: 12,
+  quality: isTouch ? 'low' : 'high', orientation: 'auto', name: '', color: COLORS[0], number: 12,
 };
 function loadSettings() {
   let saved = {};
@@ -843,6 +844,8 @@ function updateTouch() {
 function enterDriving() {
   audio.start();
   audio.setVolume(settings.volume);
+  // Re-take the chosen orientation: leaving fullscreen (back gesture) drops the lock.
+  if (isTouch && settings.orientation !== 'auto') applyOrientation(settings.orientation);
   ui.stack = [];
   ui.hide();
   hud.show(true);
@@ -887,6 +890,19 @@ document.getElementById('btn-again').onclick = () => {
 };
 document.getElementById('hud-pause').onclick = () => pause(true);
 document.getElementById('hud-cam').onclick = () => cycleCamera();
+document.getElementById('hud-orient').hidden = !isTouch;
+document.getElementById('hud-orient').onclick = () => setOrientation(toggledOrientation(matchMedia('(orientation: portrait)').matches));
+
+/** Lock the phone to `target` and remember it; tells the player when the browser can't. */
+async function setOrientation(target) {
+  const ok = await applyOrientation(target);
+  if (ok) {
+    settings.orientation = target;
+    saveSettings();
+  }
+  document.getElementById('set-orient').value = settings.orientation;
+  hud.info(ok ? `화면 방향: ${ORIENTATION_LABELS[target]}` : '이 브라우저는 화면 방향 고정을 지원하지 않습니다 — 기기를 직접 돌려 주세요', ok ? 1400 : 3500);
+}
 
 // Online form.
 const swatches = document.getElementById('colors');
@@ -933,6 +949,7 @@ function fillSettings() {
   document.getElementById('set-mode').value = settings.driveMode;
   document.getElementById('set-volume').value = settings.volume;
   document.getElementById('set-quality').value = settings.quality;
+  document.getElementById('set-orient').value = settings.orientation;
 }
 document.getElementById('set-camera').onchange = (e) => { settings.camera = e.target.value; rig.setMode(settings.camera); saveSettings(); };
 document.getElementById('set-blur').oninput = (e) => { settings.motionBlur = Number(e.target.value); saveSettings(); };
@@ -965,6 +982,7 @@ function setDriveMode(m) {
 }
 setDriveMode(settings.driveMode);
 document.getElementById('set-volume').oninput = (e) => { settings.volume = Number(e.target.value); audio.setVolume(settings.volume); saveSettings(); };
+document.getElementById('set-orient').onchange = (e) => setOrientation(e.target.value);
 document.getElementById('set-quality').onchange = (e) => { settings.quality = e.target.value; saveSettings(); location.reload(); };
 
 function cycleCamera() {

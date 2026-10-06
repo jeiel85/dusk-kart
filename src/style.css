@@ -51,6 +51,7 @@ button small { display: block; font-weight: 500; opacity: 0.85; font-size: 12.5p
 button.ghost { background: rgba(255, 255, 255, 0.07); border: 1px solid var(--line); text-align: center; }
 label { display: grid; gap: 6px; margin: 12px 0; font-size: 14px; color: var(--dim); }
 label.check { display: flex; align-items: center; gap: 10px; color: var(--text); }
+body:not(.touch) .touch-only { display: none; }
 input, select { font: inherit; color: var(--text); background: rgba(255, 255, 255, 0.06); border: 1px solid var(--line); border-radius: 10px; padding: 10px 12px; }
 select option { background: #1a2238; }
 input[type=range] { padding: 0; accent-color: var(--accent); }
@@ -119,6 +120,7 @@ kbd { font-family: var(--mono); background: rgba(255, 255, 255, 0.1); border: 1p
 #hud-keys kbd { color: #fff; }
 .icon-btn { pointer-events: auto; position: absolute; top: max(118px, calc(env(safe-area-inset-top) + 104px)); right: max(16px, env(safe-area-inset-right)); width: 42px; height: 42px; border-radius: 50%; padding: 0; text-align: center; background: rgba(8, 12, 22, 0.55); border: 1px solid var(--line); font-size: 15px; }
 #hud-cam { top: max(168px, calc(env(safe-area-inset-top) + 154px)); }
+#hud-orient { top: max(218px, calc(env(safe-area-inset-top) + 204px)); }
 
 /* ---------- touch ---------- */
 #touch { position: fixed; inset: auto 0 0 0; height: 44vh; z-index: 11; pointer-events: none; }
@@ -148,6 +150,26 @@ body.touch #hud:has(#hud-keys.show) #hud-map { opacity: 0; }
   body.touch #hud-keys { top: max(311px, calc(env(safe-area-inset-top) + 296px)); bottom: auto; }
 }
 
+/* Landscape phones (short screens, also with the browser bar showing): the
+   leaderboard goes, the HUD buttons form a row under the lap times with a
+   compact speedo to their left, lights and banner stack at the top centre, and
+   the key hints use the gap between the steering strip and BRAKE (strip ends
+   at 25vw + 75px, BRAKE starts at 100vw - 216px). */
+@media (orientation: landscape) and (max-height: 500px) {
+  body.touch #hud-board { display: none; }
+  body.touch #hud-pause, body.touch #hud-cam, body.touch #hud-orient { top: max(102px, calc(env(safe-area-inset-top) + 88px)); }
+  body.touch #hud-cam { right: calc(max(16px, env(safe-area-inset-right)) + 50px); }
+  body.touch #hud-orient { right: calc(max(16px, env(safe-area-inset-right)) + 100px); }
+  body.touch .hud-br { top: max(100px, calc(env(safe-area-inset-top) + 86px)); right: calc(max(16px, env(safe-area-inset-right)) + 156px); }
+  body.touch #hud-speed { font-size: 30px; }
+  body.touch .hud-br small { font-size: 11px; }
+  body.touch .hud-br .rpm { width: 110px; margin-top: 4px; }
+  body.touch #hud-map { top: 96px; width: 104px; }
+  body.touch #hud-lights { top: max(12px, env(safe-area-inset-top)); }
+  body.touch #hud-lights i { width: 24px; height: 24px; }
+  body.touch #hud-banner { top: max(70px, calc(env(safe-area-inset-top) + 58px)); font-size: 34px; }
+  body.touch #hud-keys { left: calc(62.5vw - 70px); max-width: calc(75vw - 300px); bottom: max(10px, env(safe-area-inset-bottom)); font-size: 11px; padding: 7px 10px; gap: 4px 10px; }
+}
 @media (max-width: 1000px) {
   body:not(.touch) #hud-keys { bottom: 210px; max-width: calc(100vw - 32px); }
 }
