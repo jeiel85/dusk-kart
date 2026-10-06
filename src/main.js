@@ -17,7 +17,7 @@ import { Input } from './input.js';
 import { Hud, fmtTime, escapeHtml } from './hud.js';
 import { randomRoomCode, now, snapshotLimits, finishClaimPlausible, NO_PROGRESS } from './netcheck.js';
 import { sanitizeSettings, QUALITIES } from './settings.js';
-import { applyOrientation, toggledOrientation, ORIENTATION_LABELS } from './orientation.js';
+import { applyOrientation, buttonTarget, ORIENTATION_LABELS } from './orientation.js';
 import { ResolutionGovernor } from './perf.js';
 
 const STEP = 1 / 240;
@@ -844,8 +844,7 @@ function updateTouch() {
 function enterDriving() {
   audio.start();
   audio.setVolume(settings.volume);
-  // Re-take the chosen orientation: leaving fullscreen (back gesture) drops the lock.
-  if (isTouch && settings.orientation !== 'auto') applyOrientation(settings.orientation);
+  reapplyOrientation();
   ui.stack = [];
   ui.hide();
   hud.show(true);
@@ -891,7 +890,23 @@ document.getElementById('btn-again').onclick = () => {
 document.getElementById('hud-pause').onclick = () => pause(true);
 document.getElementById('hud-cam').onclick = () => cycleCamera();
 document.getElementById('hud-orient').hidden = !isTouch;
-document.getElementById('hud-orient').onclick = () => setOrientation(toggledOrientation(matchMedia('(orientation: portrait)').matches));
+document.getElementById('hud-orient').onclick = () => setOrientation(
+  buttonTarget(settings.orientation, !!document.fullscreenElement, matchMedia('(orientation: portrait)').matches));
+
+const RELOCK_HINT = '화면 방향 고정이 풀렸습니다 — 🔄 버튼으로 다시 고정하세요';
+/**
+ * Re-take the chosen orientation when driving starts: leaving fullscreen (back
+ * gesture) drops the lock. Fullscreen needs a user gesture, and online races
+ * also start from a network message, so without one just say how to restore it.
+ */
+function reapplyOrientation() {
+  if (!isTouch || settings.orientation === 'auto' || document.fullscreenElement) return;
+  if (navigator.userActivation && !navigator.userActivation.isActive) {
+    hud.info(RELOCK_HINT, 3500);
+    return;
+  }
+  applyOrientation(settings.orientation).then((ok) => { if (!ok) hud.info(RELOCK_HINT, 3500); });
+}
 
 /** Lock the phone to `target` and remember it; tells the player when the browser can't. */
 async function setOrientation(target) {

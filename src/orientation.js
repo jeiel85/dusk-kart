@@ -6,8 +6,13 @@
  */
 export const ORIENTATION_LABELS = { auto: '기기 방향 따라가기', landscape: '가로', portrait: '세로' };
 
-/** What the HUD toggle switches to from the orientation on screen now. */
-export function toggledOrientation(portraitNow) {
+/**
+ * What the HUD button asks for. While a chosen orientation is in force it
+ * flips to the other one; once the lock has been dropped (fullscreen left)
+ * the first press restores the saved choice instead of flipping away from it.
+ */
+export function buttonTarget(saved, fullscreen, portraitNow) {
+  if (saved !== 'auto' && !fullscreen) return saved;
   return portraitNow ? 'landscape' : 'portrait';
 }
 
