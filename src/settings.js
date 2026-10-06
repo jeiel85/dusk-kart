@@ -26,6 +26,8 @@ export function sanitizeSettings(saved, defaults, { cameraModes, driveModes, col
     driveMode: inList(driveModes),
     volume: numberIn(0, 1),
     quality: inList(QUALITIES),
+    qualityAuto: (v) => typeof v === 'boolean',
+    qualityCeiling: inList(QUALITIES),
     orientation: inList(ORIENTATIONS),
     name: (v) => typeof v === 'string' && v.length <= 14,
     color: (v) => colors.includes(v),
