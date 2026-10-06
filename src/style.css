@@ -133,6 +133,16 @@ body.touch .hud-br { bottom: auto; top: max(118px, calc(env(safe-area-inset-top)
 body.touch #hud-speed { font-size: 40px; }
 body.touch #hud-map { width: 130px; bottom: auto; top: 50%; }
 body.touch #hud-keys { bottom: calc(44vh + 8px); max-width: calc(100vw - 32px); font-size: 12px; }
+/* The minimap shares the hints' strip on phones; it is back once they fade. */
+#hud-map { transition: opacity 0.4s; }
+body.touch #hud:has(#hud-keys.show) #hud-map { opacity: 0; }
+/* Portrait phones: BRAKE stacks above GAS under the right thumb so it no longer
+   covers the steering strip, and the start lights / banners sit below the speedo. */
+@media (orientation: portrait) and (max-width: 600px) {
+  body.touch .t-brake { right: calc(18px + env(safe-area-inset-right)); bottom: calc(8% + 106px + env(safe-area-inset-bottom)); }
+  body.touch #hud-lights { top: max(205px, calc(env(safe-area-inset-top) + 190px)); }
+  body.touch #hud-banner { top: 36%; }
+}
 
 @media (max-width: 1000px) {
   body:not(.touch) #hud-keys { bottom: 210px; max-width: calc(100vw - 32px); }
