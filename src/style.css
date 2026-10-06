@@ -113,6 +113,10 @@ kbd { font-family: var(--mono); background: rgba(255, 255, 255, 0.1); border: 1p
 #hud-toast { position: absolute; bottom: 22%; left: 50%; transform: translateX(-50%); background: rgba(8, 12, 22, 0.7); padding: 8px 16px; border-radius: 10px; font-size: 14px; opacity: 0; transition: opacity 0.2s; }
 #hud-toast.show { opacity: 1; }
 #hud-net { position: absolute; top: max(14px, env(safe-area-inset-top)); left: 50%; transform: translateX(-50%); font-size: 12px; background: rgba(8, 12, 22, 0.6); padding: 4px 12px; border-radius: 8px; color: var(--dim); }
+#hud-keys { position: absolute; left: 50%; bottom: max(16px, env(safe-area-inset-bottom)); transform: translateX(-50%); width: max-content; max-width: calc(100vw - 460px); display: flex; flex-wrap: wrap; justify-content: center; gap: 6px 16px; padding: 9px 16px; background: rgba(8, 12, 22, 0.66); border: 1px solid var(--line); border-radius: 12px; font-size: 13px; opacity: 0; transition: opacity 0.8s; }
+#hud-keys.show { opacity: 1; transition-duration: 0.2s; }
+#hud-keys span { white-space: nowrap; color: var(--dim); }
+#hud-keys kbd { color: #fff; }
 .icon-btn { pointer-events: auto; position: absolute; top: max(118px, calc(env(safe-area-inset-top) + 104px)); right: max(16px, env(safe-area-inset-right)); width: 42px; height: 42px; border-radius: 50%; padding: 0; text-align: center; background: rgba(8, 12, 22, 0.55); border: 1px solid var(--line); font-size: 15px; }
 #hud-cam { top: max(168px, calc(env(safe-area-inset-top) + 154px)); }
 
@@ -128,7 +132,11 @@ kbd { font-family: var(--mono); background: rgba(255, 255, 255, 0.1); border: 1p
 body.touch .hud-br { bottom: auto; top: max(118px, calc(env(safe-area-inset-top) + 100px)); right: 70px; }
 body.touch #hud-speed { font-size: 40px; }
 body.touch #hud-map { width: 130px; bottom: auto; top: 50%; }
+body.touch #hud-keys { bottom: calc(44vh + 8px); max-width: calc(100vw - 32px); font-size: 12px; }
 
+@media (max-width: 1000px) {
+  body:not(.touch) #hud-keys { bottom: 210px; max-width: calc(100vw - 32px); }
+}
 @media (max-width: 700px) {
   #hud-pos { font-size: 34px; }
   .hud-tr b { font-size: 15px; }
