@@ -18,7 +18,7 @@ import { Hud, fmtTime, escapeHtml } from './hud.js';
 import { randomRoomCode, now, snapshotLimits, finishClaimPlausible, NO_PROGRESS } from './netcheck.js';
 import { sanitizeSettings, QUALITIES } from './settings.js';
 import { applyOrientation, buttonTarget, ORIENTATION_LABELS } from './orientation.js';
-import { ResolutionGovernor } from './perf.js';
+import { ResolutionGovernor, QualityTuner, QUALITY_STEPS } from './perf.js';
 
 const STEP = 1 / 240;
 const RACE_LAPS = 3;
@@ -31,7 +31,8 @@ const isTouch = matchMedia('(pointer: coarse)').matches || navigator.maxTouchPoi
 // ---------------------------------------------------------------- settings
 const DEFAULTS = {
   camera: 'helmet', motionBlur: 1, cameraShake: 1, lensDistortion: true, driveMode: 'easy', volume: 0.8,
-  quality: isTouch ? 'low' : 'high', orientation: 'auto', name: '', color: COLORS[0], number: 12,
+  // Phones start low and let the tuner raise it; desktops start high.
+  quality: isTouch ? 'low' : 'high', qualityAuto: isTouch, qualityCeiling: 'high', orientation: 'auto', name: '', color: COLORS[0], number: 12,
 };
 function loadSettings() {
   let saved = {};
@@ -42,7 +43,8 @@ const settings = loadSettings();
 function saveSettings() {
   try { localStorage.setItem('duskkart.settings', JSON.stringify(settings)); } catch { /* storage unavailable: keep in memory */ }
 }
-if (QUALITIES.includes(params.get('quality'))) settings.quality = params.get('quality');
+const qualityParam = QUALITIES.includes(params.get('quality'));
+if (qualityParam) settings.quality = params.get('quality');
 
 // ---------------------------------------------------------------- renderer
 const canvas = document.getElementById('view');
@@ -60,6 +62,8 @@ renderer.shadowMap.type = THREE.PCFSoftShadowMap;
 // The quality preset caps the pixel ratio; the governor scales below it while
 // the frame rate is low.
 const governor = new ResolutionGovernor();
+// A ?quality= override is a test setup, not something to learn from.
+const tuner = settings.qualityAuto && !qualityParam ? new QualityTuner(settings.quality, settings.qualityCeiling) : null;
 const pixelRatio = () => Math.min(window.devicePixelRatio || 1, settings.quality === 'high' ? 1.5 : settings.quality === 'medium' ? 1.1 : 0.85) * governor.scale;
 
 const track = new Track();
@@ -963,7 +967,9 @@ function fillSettings() {
   document.getElementById('set-lens').checked = settings.lensDistortion;
   document.getElementById('set-mode').value = settings.driveMode;
   document.getElementById('set-volume').value = settings.volume;
-  document.getElementById('set-quality').value = settings.quality;
+  const auto = document.querySelector('#set-quality option[value=auto]');
+  auto.textContent = `자동 — 지금: ${QUALITY_LABELS[settings.quality]}`;
+  document.getElementById('set-quality').value = settings.qualityAuto ? 'auto' : settings.quality;
   document.getElementById('set-orient').value = settings.orientation;
 }
 document.getElementById('set-camera').onchange = (e) => { settings.camera = e.target.value; rig.setMode(settings.camera); saveSettings(); };
@@ -998,7 +1004,19 @@ function setDriveMode(m) {
 setDriveMode(settings.driveMode);
 document.getElementById('set-volume').oninput = (e) => { settings.volume = Number(e.target.value); audio.setVolume(settings.volume); saveSettings(); };
 document.getElementById('set-orient').onchange = (e) => setOrientation(e.target.value);
-document.getElementById('set-quality').onchange = (e) => { settings.quality = e.target.value; saveSettings(); location.reload(); };
+document.getElementById('set-quality').onchange = (e) => {
+  // "Auto" keeps the current preset and lets the tuner move it from the next race on.
+  if (e.target.value === 'auto') {
+    settings.qualityAuto = true;
+    settings.qualityCeiling = 'high';
+    saveSettings();
+    return;
+  }
+  settings.quality = e.target.value;
+  settings.qualityAuto = false;
+  saveSettings();
+  location.reload();
+};
 
 function cycleCamera() {
   const i = CAMERA_MODES.indexOf(rig.mode);
@@ -1035,6 +1053,7 @@ function frame(nowMs) {
   last = nowMs;
   // A hidden page has no meaningful frame rate (and dev tools step it by hand).
   if (!G.glLost && !document.hidden && governor.sample(rawDt) !== null) resize();
+  if (tuner) tuneQuality(rawDt);
   const followK = G.follow?.kart;
   input.update(dt, followK ? followK.speed : 0);
 
@@ -1109,6 +1128,23 @@ function frame(nowMs) {
   updateHud();
   hud.tick();
   if (!G.glLost) post.render(G.simTime, rig.lens(f ? f.kart : { speed: 0 }, settings));
+}
+
+const QUALITY_LABELS = { low: '낮음', medium: '보통', high: '높음' };
+
+/** Feed the auto-quality tuner while a race is really being driven; save its verdict for the next load. */
+function tuneQuality(rawDt) {
+  const driving = (G.mode === 'race' || G.mode === 'trial' || G.mode === 'online') && G.phase === 'go'
+    && !G.paused && !uiBlocksDriving() && !document.hidden && !G.glLost;
+  const v = tuner.sample(rawDt, driving, governor.scale);
+  if (!v) return;
+  const up = QUALITY_STEPS.indexOf(v.quality) > QUALITY_STEPS.indexOf(settings.quality);
+  settings.quality = v.quality;
+  settings.qualityCeiling = v.ceiling;
+  saveSettings();
+  hud.info(up
+    ? `이 기기는 여유가 있어 다음 실행부터 그래픽 품질을 '${QUALITY_LABELS[v.quality]}'(으)로 올립니다`
+    : `프레임이 부족해 다음 실행부터 그래픽 품질을 '${QUALITY_LABELS[v.quality]}'(으)로 낮춥니다`, 4500);
 }
 
 function updateRaceFlow() {
