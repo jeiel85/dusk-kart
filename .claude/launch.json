@@ -1,6 +1,7 @@
 {
   "version": "0.0.1",
   "configurations": [
-    { "name": "dusk-kart", "runtimeExecutable": "npx", "runtimeArgs": ["vite", "--port", "5178", "--strictPort"], "port": 5178 }
+    { "name": "dusk-kart", "runtimeExecutable": "npx", "runtimeArgs": ["vite", "--port", "5178", "--strictPort"], "port": 5178 },
+    { "name": "dusk-kart-device", "runtimeExecutable": "npx", "runtimeArgs": ["vite", "--port", "5180", "--strictPort", "--host", "127.0.0.1"], "port": 5180 }
   ]
 }
