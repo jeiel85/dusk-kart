@@ -1,6 +1,6 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
-import { applyOrientation, toggledOrientation } from '../src/orientation.js';
+import { applyOrientation, buttonTarget } from '../src/orientation.js';
 
 function fakeEnv({ lock = 'ok', fullscreen = 'ok', unlockThrows = false } = {}) {
   const calls = [];
@@ -22,9 +22,16 @@ function fakeEnv({ lock = 'ok', fullscreen = 'ok', unlockThrows = false } = {}) 
   return { doc, scr: { orientation }, calls };
 }
 
-test('the toggle flips to the other orientation', () => {
-  assert.equal(toggledOrientation(true), 'landscape');
-  assert.equal(toggledOrientation(false), 'portrait');
+test('the button flips orientation, or restores a dropped lock first', () => {
+  // Following the device, or locked in fullscreen: flip.
+  assert.equal(buttonTarget('auto', false, true), 'landscape');
+  assert.equal(buttonTarget('auto', true, false), 'portrait');
+  assert.equal(buttonTarget('landscape', true, false), 'portrait');
+  assert.equal(buttonTarget('portrait', true, true), 'landscape');
+  // Lock dropped (fullscreen left): restore the saved choice, whatever the device shows.
+  assert.equal(buttonTarget('landscape', false, false), 'landscape');
+  assert.equal(buttonTarget('landscape', false, true), 'landscape');
+  assert.equal(buttonTarget('portrait', false, false), 'portrait');
 });
 
 test('locking enters fullscreen first, then locks; already fullscreen skips it', async () => {
