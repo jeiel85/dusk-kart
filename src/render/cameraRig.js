@@ -7,6 +7,37 @@ export const CAMERA_LABELS = { helmet: '헬멧 액션캠', chase: '3인칭 체�
 const tmp = new THREE.Vector3();
 const tmp2 = new THREE.Vector3();
 
+// Smooth 1D value noise in [-1, 1]. It is a function of time only, so the
+// shake looks the same at 30, 60 or 144 fps — sine sums above the frame rate
+// alias into a random low-frequency wobble instead.
+function hash1(n) {
+  const s = Math.sin(n * 127.1 + 311.7) * 43758.5453;
+  return (s - Math.floor(s)) * 2 - 1;
+}
+export function noise1(x) {
+  const i = Math.floor(x);
+  const f = x - i;
+  return lerp(hash1(i), hash1(i + 1), f * f * (3 - 2 * f));
+}
+
+/**
+ * Helmet-cam vibration for the current kart state, before the player's
+ * shake setting is applied. Nothing moves at a standstill: road texture grows
+ * with speed, curbs add a short buzz only while rolling over them, and
+ * collisions kick the head for as long as `shake` decays.
+ * @returns {{y: number, pitch: number, roll: number}} metres / radians
+ */
+export function helmetVibration(t, speed, rumble, shake) {
+  const moving = clamp((speed - 0.5) / 24, 0, 1);
+  const road = moving * moving * 0.0035;
+  const curb = (rumble || 0) * clamp(speed / 8, 0, 1) * 0.011;
+  const hit = shake * 0.05;
+  const y = noise1(t * 7) * road + noise1(t * 11 + 40) * curb + noise1(t * 9 + 80) * hit;
+  const pitch = noise1(t * 6 + 120) * road * 0.7 + noise1(t * 10 + 160) * curb * 0.5 + noise1(t * 8 + 200) * hit * 0.6;
+  const rollAng = noise1(t * 9 + 240) * curb * 0.35 + noise1(t * 7 + 280) * hit * 0.5;
+  return { y, pitch, roll: rollAng };
+}
+
 /**
  * Helmet-mounted action cam (wide, head moves with G-forces and vibration)
  * plus two chase cameras.
@@ -25,6 +56,8 @@ export class CameraRig {
     this.headPitch = 0;
     this.fovBase = { helmet: 92, chase: 68, far: 60 };
     this.snap = true;
+    /** Player setting: 0 = no camera shake, 1 = designed amount. */
+    this.shakeScale = 1;
   }
 
   setMode(mode) {
@@ -55,18 +88,18 @@ export class CameraRig {
       this.headRoll += (targetRoll - this.headRoll) * k;
       this.headYaw += (targetYaw - this.headYaw) * (1 - Math.exp(-dt * 3.5));
       this.headPitch += (targetPitch - this.headPitch) * k;
-      // Vibration: engine buzz + road texture + curbs.
-      const t = this.t;
-      const buzz = 0.0012 + speed * 0.00009 + kart.rumble * 0.006 + this.shake * 0.03;
-      const vx = (Math.sin(t * 71.3) + Math.sin(t * 43.1 + 1.3) * 0.6) * buzz;
-      const vy = (Math.sin(t * 83.7 + 0.4) + Math.sin(t * 29.3) * 0.7) * buzz;
+      const v = helmetVibration(this.t, speed, kart.rumble, this.shake);
+      const s = this.shakeScale;
+      // The rig owns helmet vibration: drop the body's curb bump so the shake
+      // setting covers everything the player sees.
       cam.position.copy(tmp);
+      cam.position.y -= model.body.position.y;
       model.body.getWorldQuaternion(cam.quaternion);
       // Look forward (+Z of the kart) and a little down at the wheel.
       cam.rotateY(Math.PI + this.headYaw);
-      cam.rotateX(-0.36 - this.headPitch + vy * 2);
-      cam.rotateZ(this.headRoll + vx * 2);
-      cam.position.y += vy;
+      cam.rotateX(-0.36 - this.headPitch + v.pitch * s);
+      cam.rotateZ(this.headRoll + v.roll * s);
+      cam.position.y += v.y * s;
       cam.fov = this.fovBase.helmet;
     } else {
       model.setFirstPerson(false);
@@ -89,7 +122,7 @@ export class CameraRig {
       this.pos.lerp(target, kp);
       this.look.lerp(look, 1 - Math.exp(-dt * 12));
       cam.position.copy(this.pos);
-      cam.position.y += Math.sin(this.t * 40) * this.shake * 0.05;
+      cam.position.y += noise1(this.t * 9) * this.shake * 0.05 * this.shakeScale;
       cam.lookAt(this.look);
       cam.fov = this.fovBase[this.mode] + clamp(speed * 0.45, 0, 11);
     }
@@ -107,7 +140,9 @@ export class CameraRig {
       blur,
       aberration: helmet ? 0.0035 : 0.0015,
       vignette: helmet ? 0.42 : 0.25,
-      grain: helmet ? 0.04 : 0.02,
+      // Grain flickers every frame; it follows the shake setting so "0" is a
+      // fully steady picture.
+      grain: (helmet ? 0.03 : 0.015) * Math.min(1, this.shakeScale),
       center: this._center(),
     };
   }

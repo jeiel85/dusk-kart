@@ -8,7 +8,7 @@ import { DriveAssist, DRIVE_MODES, DRIVE_MODE_LABELS, PHYSICS_ASSISTS } from './
 import { clamp, mulberry32 } from './sim/math.js';
 import { buildTrackScene, buildSky } from './render/trackScene.js';
 import { KartModel } from './render/kartModel.js';
-import { CameraRig, CAMERA_MODES, CAMERA_LABELS } from './render/cameraRig.js';
+import { CameraRig, CAMERA_MODES, CAMERA_LABELS, noise1 } from './render/cameraRig.js';
 import { PostFX } from './render/postfx.js';
 import { SkidMarks } from './render/skidmarks.js';
 import { rubberTexture, nameTagTexture } from './render/textures.js';
@@ -29,7 +29,7 @@ const isTouch = matchMedia('(pointer: coarse)').matches || navigator.maxTouchPoi
 
 // ---------------------------------------------------------------- settings
 const DEFAULTS = {
-  camera: 'helmet', motionBlur: 1, lensDistortion: true, driveMode: 'easy', volume: 0.8,
+  camera: 'helmet', motionBlur: 1, cameraShake: 1, lensDistortion: true, driveMode: 'easy', volume: 0.8,
   quality: isTouch ? 'low' : 'high', name: '', color: COLORS[0], number: 12,
 };
 function loadSettings() {
@@ -83,10 +83,12 @@ scene.add(skid.mesh);
 
 const rig = new CameraRig(innerWidth / innerHeight);
 rig.setMode(settings.camera);
+rig.shakeScale = settings.cameraShake;
 const post = new PostFX(renderer, scene, rig.camera, { bloom: settings.quality !== 'low' });
 const audio = new KartAudio();
 audio.volume = settings.volume;
 const input = new Input(document.getElementById('touch'));
+input.device = isTouch ? 'touch' : 'keyboard';
 const driveAssist = new DriveAssist(track, line);
 const BOT_ASSISTS = { countersteer: true, brakeAssist: true };
 const hud = new Hud(track, line);
@@ -191,7 +193,8 @@ class Entity {
       steer: k.steer,
       wheelSpin: k.wheels.map((w) => w.spin),
       roll: att.roll, pitch: att.pitch, lift: att.lift, liftSide: att.liftSide,
-      bump: k.rumble ? Math.sin(time * 90) * 0.004 * k.rumble : 0,
+      // Curb buzz only while rolling over it (smooth noise: a 14 Hz sine aliased at 60 fps).
+      bump: k.rumble ? noise1(time * 12) * 0.004 * k.rumble * clamp(k.speed / 8, 0, 1) : 0,
     };
   }
 
@@ -281,6 +284,8 @@ function startCountdown(goTime, goWall = null) {
   G.finishAt = null;
   G.resultsShown = false;
   G.finalShown = false;
+  // Control hints stay up through the lights and fade a few seconds after GO.
+  hud.showKeys(true);
 }
 
 function startLocal(mode) {
@@ -328,6 +333,7 @@ function startAttract() {
   G.attractTimer = 0;
   rig.setMode('helmet');
   hud.show(false);
+  hud.showKeys(false);
   trackScene.setStartLights(0, false);
 }
 
@@ -909,7 +915,7 @@ document.getElementById('btn-join').onclick = () => {
   });
 };
 document.getElementById('btn-start').onclick = () => hostStart();
-document.getElementById('btn-freeroam').onclick = () => enterDriving();
+document.getElementById('btn-freeroam').onclick = () => { enterDriving(); hud.showKeys(true, 8000); };
 document.getElementById('btn-leave').onclick = toMenu;
 document.getElementById('btn-copy').onclick = async () => {
   const url = `${location.origin}${location.pathname}#room=${G.net?.code}`;
@@ -920,6 +926,7 @@ document.getElementById('btn-copy').onclick = async () => {
 function fillSettings() {
   document.getElementById('set-camera').value = settings.camera;
   document.getElementById('set-blur').value = settings.motionBlur;
+  document.getElementById('set-shake').value = settings.cameraShake;
   document.getElementById('set-lens').checked = settings.lensDistortion;
   document.getElementById('set-mode').value = settings.driveMode;
   document.getElementById('set-volume').value = settings.volume;
@@ -927,6 +934,7 @@ function fillSettings() {
 }
 document.getElementById('set-camera').onchange = (e) => { settings.camera = e.target.value; rig.setMode(settings.camera); saveSettings(); };
 document.getElementById('set-blur').oninput = (e) => { settings.motionBlur = Number(e.target.value); saveSettings(); };
+document.getElementById('set-shake').oninput = (e) => { settings.cameraShake = Number(e.target.value); rig.shakeScale = settings.cameraShake; saveSettings(); };
 document.getElementById('set-lens').onchange = (e) => { settings.lensDistortion = e.target.checked; saveSettings(); };
 document.getElementById('set-mode').onchange = (e) => setDriveMode(e.target.value);
 
@@ -998,6 +1006,7 @@ function frame(nowMs) {
   if (G.mode !== 'attract') {
     if (input.consume('pause')) pause(!(G.paused || uiBlocksDriving()));
     if (input.consume('camera')) cycleCamera();
+    if (input.consume('help')) hud.toggleKeys();
     if (input.consume('reset') && G.player && G.simTime - G.lastReset > 1 && G.phase !== 'grid') {
       G.lastReset = G.simTime;
       resetKart(G.player);
@@ -1005,6 +1014,7 @@ function frame(nowMs) {
   }
   if (input.consume('mute')) hud.info(audio.toggleMute() ? '음소거' : '소리 켜짐');
   input.endFrame();
+  hud.keyGuide(input.device);
 
   syncRaceClock();
   if (!G.paused) {
@@ -1081,6 +1091,7 @@ function updateRaceFlow() {
       G.phase = 'go';
       audio.beep(880, 0.35, 0.2);
       hud.flash('GO!', 900, 'good');
+      hud.fadeKeys(5000);
       trackScene.setStartLights(0, true);
       hud.setLights(0, true, true);
       G.greenUntil = t + 1.5;

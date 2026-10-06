@@ -7,6 +7,23 @@ export function fmtTime(t) {
 
 const $ = (sel) => document.querySelector(sel);
 
+const k = (...keys) => keys.map((x) => `<kbd>${x}</kbd>`).join('');
+/** In-race control hints, one set per input device. */
+export const KEY_GUIDES = {
+  keyboard: [
+    [k('W', '↑'), '가속'], [k('S', '↓'), '브레이크'], [k('A', 'D'), '조향'],
+    [k('C'), '카메라'], [k('R'), '트랙 복귀'], [k('Esc'), '일시정지'], [k('H'), '안내 숨기기'],
+  ],
+  pad: [
+    [k('RT'), '가속'], [k('LT'), '브레이크'], [k('L 스틱'), '조향'],
+    [k('Y'), '카메라'], [k('Back'), '트랙 복귀'], [k('Start'), '일시정지'],
+  ],
+  touch: [
+    ['왼쪽 드래그', '조향'], [k('GAS'), '가속'], [k('BRAKE'), '브레이크 · 정지 중 길게 = 후진'],
+    [k('🎥'), '카메라'], [k('❚❚'), '일시정지'],
+  ],
+};
+
 /** DOM heads-up display: timing, speedo, standings, minimap, banners. */
 export class Hud {
   constructor(track, line) {
@@ -31,6 +48,9 @@ export class Hud {
     this.bannerUntil = 0;
     this.toastUntil = 0;
     this.lastBoard = '';
+    this.keys = $('#hud-keys');
+    this.keysDevice = null;
+    this.keysUntil = 0;
   }
 
   show(on) { this.el.hidden = !on; }
@@ -121,8 +141,27 @@ export class Hud {
     this.net.hidden = !text;
   }
 
+  /** Fill the control hints for the player's current input device. */
+  keyGuide(device) {
+    if (device === this.keysDevice || !KEY_GUIDES[device]) return;
+    this.keysDevice = device;
+    this.keys.innerHTML = KEY_GUIDES[device].map(([keys, what]) => `<span>${keys} ${what}</span>`).join('');
+  }
+
+  /** Show the control hints; with `ms` they fade out on their own after that long. */
+  showKeys(on, ms = 0) {
+    this.keys.classList.toggle('show', on);
+    this.keysUntil = on && ms > 0 ? performance.now() + ms : 0;
+  }
+
+  toggleKeys() { this.showKeys(!this.keys.classList.contains('show')); }
+
+  /** Let hints that are still up fade out after `ms` (no-op if the player hid them). */
+  fadeKeys(ms) { if (this.keys.classList.contains('show')) this.showKeys(true, ms); }
+
   tick() {
     const t = performance.now();
+    if (this.keysUntil && t > this.keysUntil) this.showKeys(false);
     if (this.bannerUntil && t > this.bannerUntil) { this.banner.className = ''; this.bannerUntil = 0; }
     if (this.toastUntil && t > this.toastUntil) { this.toast.classList.remove('show'); this.toastUntil = 0; }
   }

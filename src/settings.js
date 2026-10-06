@@ -20,6 +20,7 @@ export function sanitizeSettings(saved, defaults, { cameraModes, driveModes, col
   const valid = {
     camera: inList(cameraModes),
     motionBlur: numberIn(0, 1.5),
+    cameraShake: numberIn(0, 1.5),
     lensDistortion: (v) => typeof v === 'boolean',
     driveMode: inList(driveModes),
     volume: numberIn(0, 1),

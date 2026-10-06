@@ -15,13 +15,16 @@ export class Input {
     this.touch = { steer: 0, throttle: 0, brake: 0, active: false };
     this.lastPad = {};
     this.usingPad = false;
+    /** Last device the player touched: 'keyboard' | 'pad' | 'touch'. */
+    this.device = 'keyboard';
 
     window.addEventListener('keydown', (e) => {
       if (e.target instanceof HTMLInputElement) return;
-      if (['ArrowUp', 'ArrowDown', 'ArrowLeft', 'ArrowRight', 'Space'].includes(e.code)) e.preventDefault();
+      if (['ArrowUp', 'ArrowDown', 'ArrowLeft', 'ArrowRight', 'Space', 'F1'].includes(e.code)) e.preventDefault();
       if (!this.keys.has(e.code)) this.pressed.add(e.code);
       this.keys.add(e.code);
       this.usingPad = false;
+      this.device = 'keyboard';
     });
     window.addEventListener('keyup', (e) => this.keys.delete(e.code));
     window.addEventListener('blur', () => this.keys.clear());
@@ -38,6 +41,7 @@ export class Input {
       steerId = e.pointerId; startX = e.clientX;
       wheel.setPointerCapture(e.pointerId);
       this.touch.active = true;
+      this.device = 'touch';
     });
     wheel.addEventListener('pointermove', (e) => {
       if (e.pointerId !== steerId) return;
@@ -52,7 +56,7 @@ export class Input {
     wheel.addEventListener('pointerup', endSteer);
     wheel.addEventListener('pointercancel', endSteer);
     const hold = (el, key) => {
-      el.addEventListener('pointerdown', (e) => { el.setPointerCapture(e.pointerId); this.touch[key] = 1; this.touch.active = true; el.classList.add('on'); });
+      el.addEventListener('pointerdown', (e) => { el.setPointerCapture(e.pointerId); this.touch[key] = 1; this.touch.active = true; this.device = 'touch'; el.classList.add('on'); });
       const up = () => { this.touch[key] = 0; el.classList.remove('on'); };
       el.addEventListener('pointerup', up);
       el.addEventListener('pointercancel', up);
@@ -61,13 +65,14 @@ export class Input {
     hold(brake, 'brake');
   }
 
-  /** Edge-triggered actions: 'camera', 'reset', 'pause', 'mute', 'lookback'. */
+  /** Edge-triggered actions: 'camera', 'reset', 'pause', 'mute', 'help'. */
   consume(action) {
     const map = {
       camera: ['KeyC'],
       reset: ['KeyR'],
       pause: ['Escape', 'KeyP'],
       mute: ['KeyM'],
+      help: ['KeyH', 'F1'],
     };
     for (const code of map[action] || []) {
       if (this.pressed.has(code)) { this.pressed.delete(code); return true; }
@@ -99,13 +104,14 @@ export class Input {
       padBrake = Math.max(p.buttons[6]?.value || 0, p.buttons[2]?.pressed ? 1 : 0);
       const edge = (i, name) => {
         const now = !!p.buttons[i]?.pressed;
-        if (now && !this.lastPad[i]) this.pressed.add(`pad:${name}`);
+        if (now && !this.lastPad[i]) { this.pressed.add(`pad:${name}`); this.device = 'pad'; }
         this.lastPad[i] = now;
       };
       edge(3, 'camera');
       edge(8, 'reset');
       edge(9, 'pause');
       if (Math.abs(padSteer) > 0.05 || padGas > 0.05 || padBrake > 0.05) this.usingPad = true;
+      if (this.usingPad) this.device = 'pad';
       break;
     }
 
