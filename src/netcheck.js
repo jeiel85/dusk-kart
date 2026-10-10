@@ -157,3 +157,16 @@ export const MAX_AUTO_REJOINS = 2;
 export function shouldAutoRejoin({ sinceJoin, relaysOpen, peers, attempts }) {
   return peers === 0 && relaysOpen > 0 && sinceJoin >= REJOIN_AFTER && attempts < MAX_AUTO_REJOINS;
 }
+
+/**
+ * ms to wait after leaving a room before joining one again.
+ * Why: trystero keys its relay subscriptions by topic, and leave() drops the
+ * old room's topics only after the relay batch flushes (a setTimeout 0, then
+ * a promise). Joining the same room in the same tick re-adds those topics
+ * first and the late cleanup then removes them, so the new session never
+ * hears the other side. Measured in headless Chromium over the public
+ * relays: after an immediate re-entry the next peer did not connect within
+ * 45 s (twice); with this gap it connected in 14-15 s, ~10-14 s without any
+ * re-entry.
+ */
+export const ROOM_REJOIN_GAP = 1000;
