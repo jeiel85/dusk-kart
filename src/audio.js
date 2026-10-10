@@ -96,6 +96,7 @@ export class KartAudio {
     this.volume = 0.8;
     this.muted = false;
     this.remote = new Map();
+    this.wet = false;
   }
 
   /** Must be called from a user gesture (browser autoplay policy). */
@@ -132,6 +133,10 @@ export class KartAudio {
     this.road = loopNoise('lowpass', 160, 0.8);
     this.scrub = loopNoise('bandpass', 900, 2.5);
     this.curb = loopNoise('bandpass', 120, 3);
+    // Rain on the helmet and track, plus the hiss of tyres through standing water.
+    this.rain = loopNoise('bandpass', 2600, 0.35);
+    this.spray = loopNoise('highpass', 1800, 0.6);
+    this.setWet(this.wet);
     // Curb rattle: an LFO chopping the curb noise.
     this.curbLfo = ctx.createOscillator();
     this.curbLfo.type = 'square';
@@ -144,6 +149,15 @@ export class KartAudio {
     this.remoteBus = ctx.createGain();
     this.remoteBus.gain.value = 0.9;
     this.remoteBus.connect(this.master);
+  }
+
+  /**
+   * Input: true in the rain. Why stored: the AudioContext only exists after
+   * the first user gesture, so the menu can pick rain before start() runs.
+   */
+  setWet(wet) {
+    this.wet = wet;
+    if (this.rain) this.rain.g.gain.setTargetAtTime(wet ? 0.11 : 0, this.ctx.currentTime, 0.4);
   }
 
   setVolume(v) {
@@ -166,6 +180,7 @@ export class KartAudio {
     this.wind.g.gain.setTargetAtTime(clamp(speed * speed * 0.00016, 0, 0.3), now, 0.1);
     this.wind.f.frequency.setTargetAtTime(400 + speed * 45, now, 0.1);
     this.road.g.gain.setTargetAtTime(clamp(speed * 0.012, 0, 0.3), now, 0.05);
+    this.spray.g.gain.setTargetAtTime(this.wet ? clamp(speed * 0.008, 0, 0.18) : 0, now, 0.08);
     let slip = 0;
     for (const w of kart.wheels) slip = Math.max(slip, w.sliding ? w.slip : 0);
     this.scrub.g.gain.setTargetAtTime(clamp((slip - 0.8) * 0.06, 0, 0.22), now, 0.04);

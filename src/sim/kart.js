@@ -83,6 +83,7 @@ export class Kart {
     this.lateral = 0;
     this.s = 0;
     this.surfaceGrip = 1;
+    this.weatherGrip = 1; // track-wide grip factor seen on the last step (rain < 1)
     this.prev = { x, z, heading };
     for (const w of this.wheels) { w.load = 0; w.slip = 0; w.sliding = false; w.spin = 0; w.lift = 0; }
   }
@@ -114,7 +115,7 @@ export class Kart {
     const s = this.spec;
     const L = s.a + s.b;
     const v = Math.max(speed, 0.5);
-    const grip = (L * s.mu * 9.81 * 0.95) / (v * v) + 0.09;
+    const grip = (L * s.mu * this.weatherGrip * 9.81 * 0.95) / (v * v) + 0.09;
     const yaw = Math.atan((L * 0.9) / v);
     const cap = Math.min(full, grip, yaw);
     return full + (cap - full) * limiter;
@@ -139,6 +140,7 @@ export class Kart {
     this.hint = proj.i;
     this.s = proj.s;
     this.lateral = proj.lateral;
+    this.weatherGrip = track.weather.grip;
 
     // --- driver controls -------------------------------------------------
     let throttle = clamp(input.throttle || 0, 0, 1);
@@ -238,7 +240,7 @@ export class Kart {
       wh.surface = surf.id;
       rumble = Math.max(rumble, surf.rumble);
       gripSum += surf.grip;
-      const mu = s.mu * surf.grip * (wh.front ? 1 : s.muRear);
+      const mu = s.mu * track.gripOf(surf) * (wh.front ? 1 : s.muRear);
       const fmax = mu * fz;
 
       // Contact-patch velocity in the body frame.
@@ -299,7 +301,7 @@ export class Kart {
     // cures both spins and solid-axle push; off in the "real" mode.
     const stab = assists.stability || 0;
     if (stab > 0 && speed > 2.5 && !this.reverse) {
-      const aMax = s.mu * G * 0.95;
+      const aMax = s.mu * this.weatherGrip * G * 0.95;
       const rMax = aMax / speed;
       const rKin = clamp((-u * Math.tan(delta)) / L, -rMax, rMax);
       Tz += stab * s.inertia * 5 * (rKin - this.omega);

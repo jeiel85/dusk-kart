@@ -3,6 +3,8 @@
  * URL is untrusted (older versions, hand edits, shared links), so each field
  * is checked against what the UI can produce and falls back to its default.
  */
+import { WEATHERS } from './sim/track.js';
+
 export const QUALITIES = ['low', 'medium', 'high'];
 export const ORIENTATIONS = ['auto', 'landscape', 'portrait'];
 
@@ -29,6 +31,7 @@ export function sanitizeSettings(saved, defaults, { cameraModes, driveModes, col
     qualityAuto: (v) => typeof v === 'boolean',
     qualityCeiling: inList(QUALITIES),
     orientation: inList(ORIENTATIONS),
+    weather: inList(WEATHERS),
     name: (v) => typeof v === 'string' && v.length <= 14,
     color: (v) => colors.includes(v),
     number: (v) => Number.isInteger(v) && v >= 1 && v <= 99,

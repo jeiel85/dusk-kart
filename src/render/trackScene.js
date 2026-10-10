@@ -114,7 +114,8 @@ export function buildTrackScene(track, racingLine, { quality = 'high' } = {}) {
   // Paved area under the funfair and the paddock.
   const lot = T.lotTexture();
   lot.repeat.set(30, 12);
-  const lotMesh = new THREE.Mesh(new THREE.PlaneGeometry(190, 70), new THREE.MeshStandardMaterial({ map: lot, roughness: 0.95 }));
+  const lotMat = new THREE.MeshStandardMaterial({ map: lot, roughness: 0.95 });
+  const lotMesh = new THREE.Mesh(new THREE.PlaneGeometry(190, 70), lotMat);
   lotMesh.rotation.x = -Math.PI / 2;
   lotMesh.position.set(-20, -0.01, -104);
   lotMesh.receiveShadow = true;
@@ -243,6 +244,59 @@ export function buildTrackScene(track, racingLine, { quality = 'high' } = {}) {
   blocks.castShadow = quality === 'high';
   blocks.receiveShadow = true;
   group.add(blocks);
+
+  // Double steel guardrail (W-beam) between the tyre wall and the fence. The
+  // tyres stay the collision surface (track.barrier); the rail is the solid
+  // backstop you see above them. Two beams so the upper one clears the
+  // 0.82 m tyre stack and is visible from the helmet cam.
+  // Moderate metalness: the scene has no environment map, so a fully metallic
+  // beam would have nothing to reflect and render near-black.
+  const railMat = new THREE.MeshStandardMaterial({ color: 0xcdd3da, metalness: 0.35, roughness: 0.42, side: THREE.DoubleSide });
+  // Beam cross-section: [outward offset (m), height (m)] — the W profile
+  // bulges towards the track at the top and bottom ridges.
+  const W = [[0.06, 0], [0, 0.05], [0.05, 0.15], [0, 0.25], [0.06, 0.3]];
+  const railBase = bar + 0.78;
+  for (const side of [-1, 1]) {
+    for (const y0 of [0.62, 0.98]) {
+      const pos = [], idx = [];
+      const cols = W.length;
+      for (let k = 0; k <= n; k++) {
+        const i = track.idx(k);
+        for (const [o, y] of W) {
+          const off = side * (railBase + o);
+          pos.push(track.px[i] + track.nx[i] * off, y0 + y, track.pz[i] + track.nz[i] * off);
+        }
+        if (k < n) {
+          for (let c = 0; c < cols - 1; c++) {
+            const A = k * cols + c, B = A + 1, C = A + cols, D = C + 1;
+            idx.push(A, C, B, B, C, D);
+          }
+        }
+      }
+      const g = new THREE.BufferGeometry();
+      g.setAttribute('position', new THREE.Float32BufferAttribute(pos, 3));
+      g.setIndex(idx);
+      g.computeVertexNormals();
+      const beamMesh = new THREE.Mesh(g, railMat);
+      beamMesh.castShadow = quality === 'high';
+      beamMesh.receiveShadow = true;
+      group.add(beamMesh);
+    }
+  }
+  const railPosts = [];
+  for (const side of [-1, 1]) {
+    placeAlong(track, side * (railBase + 0.12), 2, (x, z, h) => railPosts.push([x, z, h]));
+  }
+  const postGeo = new THREE.BoxGeometry(0.15, 1.36, 0.1);
+  postGeo.translate(0, 0.68, 0);
+  const postMesh = new THREE.InstancedMesh(postGeo, new THREE.MeshStandardMaterial({ color: 0x9aa1aa, metalness: 0.3, roughness: 0.5 }), railPosts.length);
+  railPosts.forEach(([x, z, h], k) => {
+    q.setFromAxisAngle(up, h);
+    mtx.compose(new THREE.Vector3(x, 0, z), q, new THREE.Vector3(1, 1, 1));
+    postMesh.setMatrixAt(k, mtx);
+  });
+  postMesh.castShadow = quality === 'high';
+  group.add(postMesh);
 
   // Chain-link fence behind the barriers.
   const fenceTex = T.chainLinkTexture();
@@ -578,9 +632,29 @@ export function buildTrackScene(track, racingLine, { quality = 'high' } = {}) {
   hillGeo.setIndex(hi);
   group.add(new THREE.Mesh(hillGeo, new THREE.MeshBasicMaterial({ color: 0x1a2236, side: THREE.DoubleSide, fog: true })));
 
+  // Wet look: lower roughness so lamp and sun highlights streak across the
+  // road, darker albedo (water darkens asphalt), brighter lamp pools as a
+  // cheap stand-in for their reflections. Dry values are read back from
+  // the materials so the two states can never drift apart.
+  const wetTargets = [
+    [roadMat, 0.28, 0.75], [apronMat, 0.45, 0.7], [curbMat, 0.22, 0.8], [lotMat, 0.4, 0.7],
+  ].map(([m, rough, dark]) => ({ m, rough, dark, dry: { rough: m.roughness, color: m.color.clone() } }));
+  const poolDry = poolMat.color.clone();
+  const setWet = (wet) => {
+    for (const t of wetTargets) {
+      t.m.roughness = wet ? t.rough : t.dry.rough;
+      t.m.color.copy(t.dry.color);
+      if (wet) t.m.color.multiplyScalar(t.dark);
+    }
+    poolMat.color.copy(poolDry);
+    if (wet) poolMat.color.multiplyScalar(1.7);
+    rubberMat.opacity = wet ? 0.6 : 0.42;
+  };
+
   return {
     group,
     setStartLights,
+    setWet,
     update(t) { for (const f of animated) f(t); },
   };
 }
@@ -598,6 +672,7 @@ export function buildSky(sunDir) {
       uHorizon: { value: new THREE.Color(0xe79a6e) },
       uGlow: { value: new THREE.Color(0xff8a3d) },
       uTime: { value: 0 },
+      uOvercast: { value: 0 }, // 0 = broken dusk clouds, 1 = solid rain cover
     },
     vertexShader: /* glsl */ `
       varying vec3 vDir;
@@ -608,7 +683,7 @@ export function buildSky(sunDir) {
       }`,
     fragmentShader: /* glsl */ `
       uniform vec3 uSun, uTop, uMid, uHorizon, uGlow;
-      uniform float uTime;
+      uniform float uTime, uOvercast;
       varying vec3 vDir;
       float hash(vec2 p) { return fract(sin(dot(p, vec2(127.1, 311.7))) * 43758.5453); }
       float noise(vec2 p) {
@@ -623,14 +698,15 @@ export function buildSky(sunDir) {
         vec3 col = mix(uHorizon, uMid, smoothstep(0.0, 0.18, h));
         col = mix(col, uTop, smoothstep(0.15, 0.7, h));
         float sun = max(dot(d, uSun), 0.0);
-        col += uGlow * pow(sun, 8.0) * 0.9 * (1.0 - smoothstep(0.0, 0.35, h));
-        col += uGlow * pow(sun, 60.0) * 0.6;
+        float sunVis = 1.0 - 0.85 * uOvercast;
+        col += uGlow * pow(sun, 8.0) * 0.9 * sunVis * (1.0 - smoothstep(0.0, 0.35, h));
+        col += uGlow * pow(sun, 60.0) * 0.6 * sunVis;
         // Cloud bands, lit from below near the sun.
         vec2 uv = d.xz / max(h + 0.12, 0.05);
         float c = fbm(uv * 1.3 + vec2(uTime * 0.004, 0.0));
-        c = smoothstep(0.5, 0.85, c) * smoothstep(0.02, 0.2, h) * (1.0 - smoothstep(0.5, 0.9, h));
-        vec3 cloud = mix(vec3(0.22, 0.25, 0.35), uGlow * 0.9 + vec3(0.2), pow(sun, 3.0));
-        col = mix(col, cloud, c * 0.75);
+        c = smoothstep(0.5 - 0.4 * uOvercast, 0.85 - 0.3 * uOvercast, c) * smoothstep(0.02, 0.2, h) * (1.0 - smoothstep(0.5 + 0.4 * uOvercast, 0.9 + 0.1 * uOvercast, h));
+        vec3 cloud = mix(vec3(0.22, 0.25, 0.35), uGlow * 0.9 + vec3(0.2), pow(sun, 3.0) * sunVis);
+        col = mix(col, cloud * (1.0 - 0.35 * uOvercast), c * (0.75 + 0.2 * uOvercast));
         col = mix(col, uHorizon * 0.25, smoothstep(0.0, -0.08, h));
         gl_FragColor = vec4(col, 1.0);
         #include <tonemapping_fragment>

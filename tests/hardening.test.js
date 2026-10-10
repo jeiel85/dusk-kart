@@ -106,12 +106,12 @@ test('best laps sent with a finish must fit inside that finish', () => {
 });
 
 const OPTS = { cameraModes: ['helmet', 'chase', 'far'], driveModes: ['easy', 'normal', 'real'], colors: ['#2f6bff', '#e8322b'] };
-const DEFAULTS = { camera: 'helmet', motionBlur: 1, cameraShake: 1, lensDistortion: true, driveMode: 'easy', volume: 0.8, quality: 'high', qualityAuto: false, qualityCeiling: 'high', orientation: 'auto', name: '', color: '#2f6bff', number: 12 };
+const DEFAULTS = { camera: 'helmet', motionBlur: 1, cameraShake: 1, lensDistortion: true, driveMode: 'easy', volume: 0.8, quality: 'high', qualityAuto: false, qualityCeiling: 'high', orientation: 'auto', weather: 'dry', name: '', color: '#2f6bff', number: 12 };
 
 test('stored settings are validated field by field', () => {
-  const good = { camera: 'far', motionBlur: 0.4, cameraShake: 0, lensDistortion: false, driveMode: 'real', volume: 0, quality: 'low', qualityAuto: true, qualityCeiling: 'medium', orientation: 'portrait', name: 'Ann', color: '#e8322b', number: 99 };
+  const good = { camera: 'far', motionBlur: 0.4, cameraShake: 0, lensDistortion: false, driveMode: 'real', volume: 0, quality: 'low', qualityAuto: true, qualityCeiling: 'medium', orientation: 'portrait', weather: 'rain', name: 'Ann', color: '#e8322b', number: 99 };
   assert.deepEqual(sanitizeSettings(good, DEFAULTS, OPTS), good);
-  const bad = { camera: 'drone', motionBlur: 9, cameraShake: -0.5, lensDistortion: 'yes', driveMode: 'turbo', volume: -1, quality: 'ultra', qualityAuto: 'yes', qualityCeiling: 'max', orientation: 'upside-down', name: 'x'.repeat(40), color: 'red', number: 1000, extra: 1 };
+  const bad = { camera: 'drone', motionBlur: 9, cameraShake: -0.5, lensDistortion: 'yes', driveMode: 'turbo', volume: -1, quality: 'ultra', qualityAuto: 'yes', qualityCeiling: 'max', orientation: 'upside-down', weather: 'snow', name: 'x'.repeat(40), color: 'red', number: 1000, extra: 1 };
   assert.deepEqual(sanitizeSettings(bad, DEFAULTS, OPTS), DEFAULTS);
   for (const junk of [null, 'str', 42, [1, 2], undefined]) assert.deepEqual(sanitizeSettings(junk, DEFAULTS, OPTS), DEFAULTS);
 });
