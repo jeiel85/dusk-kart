@@ -139,3 +139,21 @@ export function bestLapPlausible({ best, time, laps, length }) {
   if (!Number.isFinite(best) || !Number.isFinite(time) || !(laps > 0)) return false;
   return best >= length / MAX_SPEED && best <= time / laps + 1e-6;
 }
+
+/** Seconds alone in a lobby, with relays up, before re-entering the room by itself. */
+export const REJOIN_AFTER = 30;
+/** Automatic re-entries per room; after that only the lobby button retries. */
+export const MAX_AUTO_REJOINS = 2;
+
+/**
+ * Input: lobby diagnostics {sinceJoin (s), relaysOpen, peers (count)} and how
+ * many automatic re-entries this room has had. Output: true to re-enter now.
+ * Why: a player was once seen stuck alone with 3/5 relays up while the other
+ * side was in the room; re-entering the same room connected within ~30 s.
+ * Relays must be up — with none, re-entering cannot help and the diagnostics
+ * panel already says so. Capped, because a player who is simply waiting
+ * alone for friends would otherwise be re-joined forever.
+ */
+export function shouldAutoRejoin({ sinceJoin, relaysOpen, peers, attempts }) {
+  return peers === 0 && relaysOpen > 0 && sinceJoin >= REJOIN_AFTER && attempts < MAX_AUTO_REJOINS;
+}

@@ -16,7 +16,7 @@ import { rubberTexture, nameTagTexture } from './render/textures.js';
 import { KartAudio } from './audio.js';
 import { Input } from './input.js';
 import { Hud, fmtTime, escapeHtml } from './hud.js';
-import { randomRoomCode, now, snapshotLimits, finishClaimPlausible, bestLapPlausible, NO_PROGRESS } from './netcheck.js';
+import { randomRoomCode, now, snapshotLimits, finishClaimPlausible, bestLapPlausible, NO_PROGRESS, shouldAutoRejoin } from './netcheck.js';
 import { GHOST_DT, GHOST_KEY, encodeGhost, sanitizeGhost } from './ghost.js';
 import { sanitizeSettings, QUALITIES } from './settings.js';
 import { applyOrientation, buttonTarget, ORIENTATION_LABELS } from './orientation.js';
@@ -654,9 +654,17 @@ function profile() {
   return { name: settings.name || 'Driver', color: settings.color, number: settings.number, track: settings.track };
 }
 
-async function joinOnline(code) {
+/**
+ * Input: room code; rejoin = true when re-entering the room we are in.
+ * Output: promise, resolves once the session is up (or the join was abandoned).
+ * Why rejoin is allowed from the lobby: a fresh entry is only valid from the
+ * online form, but "다시 연결" and the automatic retry start in the lobby.
+ */
+async function joinOnline(code, { rejoin = false } = {}) {
   // The WebRTC stack is a separate chunk, fetched only when going online.
   const seq = ++joinSeq;
+  // A different room (or a fresh entry) gets its own automatic retries.
+  if (!rejoin) G.rejoins = 0;
   const btn = document.getElementById('btn-join');
   const errBox = document.getElementById('online-error');
   errBox.hidden = true;
@@ -676,7 +684,7 @@ async function joinOnline(code) {
     btn.textContent = '입장';
   }
   // Abandoned while loading: another mode started, or the player left the form.
-  if (seq !== joinSeq || ui.current !== 'online') return;
+  if (seq !== joinSeq || ui.current !== (rejoin ? 'lobby' : 'online')) return;
   closeOnline();
   clearEntities();
   G.mode = 'online';
@@ -920,11 +928,40 @@ function renderNetDiag() {
   if (warns.length && !G.diagOpened) { G.diagOpened = true; document.getElementById('net-diag').open = true; }
 }
 
+/**
+ * Input: auto = true when triggered by shouldAutoRejoin.
+ * Output: none; leaves and re-enters the same room code.
+ * Why only between races: re-entering resets our kart and the room's view
+ * of us, which must never happen to a grid that is racing.
+ */
+function rejoinRoom(auto) {
+  const code = G.net?.code;
+  // In flight: until the new session replaces it, the old one still reads
+  // "alone for 30 s" every tick and would use up the retries at once.
+  if (!code || G.phase !== 'free' || G.rejoining) return;
+  if (auto) G.rejoins = (G.rejoins || 0) + 1;
+  G.rejoining = true;
+  hud.info(auto ? '아무도 보이지 않아 방에 다시 연결합니다…' : '방에 다시 연결합니다…', 3000);
+  joinOnline(code, { rejoin: true }).catch((err) => {
+    console.error(err);
+    hud.info('다시 연결하지 못했습니다', 4000);
+  }).finally(() => { G.rejoining = false; });
+}
+
 function syncRemotes(dt) {
   const net = G.net;
   if (!net) return;
   G.diagTimer = (G.diagTimer || 0) + dt;
-  if (G.diagTimer >= 1 && ui.current === 'lobby') { G.diagTimer = 0; renderNetDiag(); refreshLobby(); }
+  if (G.diagTimer >= 1 && ui.current === 'lobby') {
+    G.diagTimer = 0;
+    renderNetDiag();
+    refreshLobby();
+    const d = net.diagnostics();
+    if (G.phase === 'free' && shouldAutoRejoin({ sinceJoin: d.sinceJoin, relaysOpen: d.relaysOpen, peers: d.peers.length, attempts: G.rejoins || 0 })) {
+      rejoinRoom(true);
+      return;
+    }
+  }
   for (const [id, peer] of net.peers) {
     if (!peer.profile || !peer.snaps.length) continue;
     let e = G.entities.find((x) => x.id === id);
@@ -1098,6 +1135,7 @@ document.getElementById('btn-join').onclick = () => {
 document.getElementById('btn-start').onclick = () => hostStart();
 document.getElementById('btn-freeroam').onclick = () => { enterDriving(); hud.showKeys(true, 8000); };
 document.getElementById('btn-leave').onclick = toMenu;
+document.getElementById('btn-rejoin').onclick = () => rejoinRoom(false);
 document.getElementById('btn-copy').onclick = async () => {
   const url = `${location.origin}${location.pathname}#room=${G.net?.code}`;
   try { await navigator.clipboard.writeText(url); hud.info('초대 링크를 복사했습니다'); } catch { prompt('초대 링크', url); }
