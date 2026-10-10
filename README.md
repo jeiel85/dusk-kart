@@ -26,6 +26,10 @@
 |:---:|:---:|:---:|
 | <img src="docs/screenshots/cockpit.jpg" alt="1인칭 액션캠" /> | <img src="docs/screenshots/chase.jpg" alt="3인칭 체이스 캠" /> | <img src="docs/screenshots/far.jpg" alt="3인칭 원거리 캠" /> |
 
+| 비 — 헬멧 액션캠 | 비 — 체이스 캠 | 코스·날씨 선택 |
+|:---:|:---:|:---:|
+| <img src="docs/screenshots/rain.jpg" alt="비 오는 날 헬멧 액션캠 — 렌즈 물방울과 빗줄기" /> | <img src="docs/screenshots/rain-chase.jpg" alt="비 오는 날 체이스 캠 — 젖은 노면과 빗줄기" /> | <img src="docs/screenshots/courses.jpg" alt="메인 메뉴의 코스 5개와 날씨 선택" /> |
+
 ## ✨ 특징
 
 **🎥 액션캠 룩**
@@ -105,7 +109,7 @@ npm test           # 코스 5개 기하 · 물리 · AI 완주 · 랩 카운트 
 npm run build      # dist/ 정적 파일 — 아무 정적 호스팅에 올리면 끝
 ```
 
-엄격한 NAT(회사망·일부 모바일망)에서는 WebRTC 직접 연결이 실패할 수 있습니다. 로비의 **연결 상태** 패널에서 릴레이 연결 수, 피어별 연결 상태·지연, 최근 오류를 볼 수 있고, 직접 연결이 실패하면 패널이 자동으로 열립니다. 이때는 빌드 시 TURN 서버를 지정하세요(기본값은 미설정 — TURN 서버는 운영 비용이 드는 중계라 기본 제공하지 않습니다).
+엄격한 NAT(회사망·일부 모바일망)에서는 WebRTC 직접 연결이 실패할 수 있습니다. 로비의 **연결 상태** 패널에서 릴레이 연결 수, 피어별 연결 상태·지연, 최근 오류를 볼 수 있고, 직접 연결이 실패하면 패널이 자동으로 열립니다. 상대가 같은 방에 있는데도 보이지 않으면 로비의 **다시 연결**로 방에 다시 들어갈 수 있고, 릴레이가 연결된 채 30초 넘게 혼자이면 자동으로 다시 들어갑니다(방마다 최대 2회). 이때는 빌드 시 TURN 서버를 지정하세요(기본값은 미설정 — TURN 서버는 운영 비용이 드는 중계라 기본 제공하지 않습니다).
 
 ```bash
 VITE_TURN_URLS=turn:turn.example.com:3478 VITE_TURN_USERNAME=user VITE_TURN_CREDENTIAL=pass npm run build
