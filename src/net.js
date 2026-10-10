@@ -1,5 +1,6 @@
 import { joinRoom, selfId, getRelaySockets } from 'trystero';
 import { now, sanitizeSnapshot, ProgressGuard } from './netcheck.js';
+import { TRACK_IDS } from './sim/track.js';
 
 /**
  * Serverless multiplayer: browsers find each other through public Nostr
@@ -8,7 +9,14 @@ import { now, sanitizeSnapshot, ProgressGuard } from './netcheck.js';
  * with the smallest id acts as race director (start signal, grid order).
  * This module is loaded on demand when the player goes online.
  */
-export const APP_ID = 'dusk-kart.lumen-park.v1';
+/**
+ * Protocol version: peers only meet peers with the same id. v2 added the
+ * host's course and weather; a v1 client would ignore both and race the club
+ * layout in the dry while everyone else drives something else (and each side
+ * would reject the other's snapshots as off-track), so the versions must not
+ * share a room.
+ */
+export const APP_ID = 'dusk-kart.lumen-park.v2';
 const INTERP_DELAY = 110; // ms of buffering for smooth remote karts
 
 function turnConfig() {
@@ -65,6 +73,8 @@ export class NetSession {
         name: String(p?.name || 'Driver').slice(0, 14),
         color: /^#[0-9a-f]{6}$/i.test(p?.color) ? p.color : '#ff8800',
         number: Math.max(1, Math.min(99, Number(p?.number) | 0 || 7)),
+        // The host's pick sets the room's course; anything unknown means the club layout.
+        track: TRACK_IDS.includes(p?.track) ? p.track : 'lumen',
       };
       handlers.onProfile?.(peerId, peer.profile);
     };
