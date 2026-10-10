@@ -16,7 +16,7 @@ import { rubberTexture, nameTagTexture } from './render/textures.js';
 import { KartAudio } from './audio.js';
 import { Input } from './input.js';
 import { Hud, fmtTime, escapeHtml } from './hud.js';
-import { randomRoomCode, now, snapshotLimits, finishClaimPlausible, bestLapPlausible, NO_PROGRESS, shouldAutoRejoin } from './netcheck.js';
+import { randomRoomCode, now, snapshotLimits, finishClaimPlausible, bestLapPlausible, NO_PROGRESS, shouldAutoRejoin, ROOM_REJOIN_GAP } from './netcheck.js';
 import { GHOST_DT, GHOST_KEY, encodeGhost, sanitizeGhost } from './ghost.js';
 import { sanitizeSettings, QUALITIES } from './settings.js';
 import { applyOrientation, buttonTarget, ORIENTATION_LABELS } from './orientation.js';
@@ -655,7 +655,7 @@ let joinSeq = 0; // bumps whenever a pending join must be abandoned
 
 function closeOnline() {
   joinSeq++;
-  if (G.net) { G.net.leave(); G.net = null; }
+  if (G.net) { G.net.leave(); G.net = null; G.netLeftAt = now(); }
   hud.netStatus('');
   G.remoteFin.clear();
   G.remoteBest.clear();
@@ -704,6 +704,14 @@ async function joinOnline(code, { rejoin = false } = {}) {
   if (seq !== joinSeq || (rejoin ? from !== 'lobby' && from !== null : from !== 'online')) return;
   // Re-entered while free-roaming: keep driving instead of raising the lobby.
   const keepDriving = rejoin && from === null;
+  // Leave first, then give trystero ROOM_REJOIN_GAP to drop the old room's
+  // relay topics; joining in the same tick lost the new subscriptions.
+  if (G.net) { G.net.leave(); G.net = null; G.netLeftAt = now(); }
+  const settle = ROOM_REJOIN_GAP - (now() - (G.netLeftAt ?? -Infinity));
+  if (settle > 0) {
+    await new Promise((resolve) => setTimeout(resolve, settle));
+    if (seq !== joinSeq) return;
+  }
   closeOnline();
   clearEntities();
   G.mode = 'online';
@@ -967,21 +975,29 @@ function rejoinRoom(auto) {
   }).finally(() => { G.rejoining = false; });
 }
 
+/**
+ * Input: none (runs on its own 1 s timer). Output: none; may call rejoinRoom().
+ * Why a timer, not the frame loop: the likeliest time to be waiting alone is
+ * right after pasting the invite into a messenger, with this tab in the
+ * background, where requestAnimationFrame stops and the retry never fired.
+ */
+function checkAlone() {
+  const net = G.net;
+  // Waiting alone happens in the lobby panel or free-roaming behind it
+  // ("자유 주행하며 대기", where no panel is up) — check both.
+  if (!net || G.phase !== 'free' || (ui.current !== 'lobby' && ui.current !== null)) return;
+  const d = net.diagnostics();
+  if (shouldAutoRejoin({ sinceJoin: d.sinceJoin, relaysOpen: d.relaysOpen, peers: d.peers.length, attempts: G.rejoins || 0 })) rejoinRoom(true);
+}
+setInterval(checkAlone, 1000);
+
 function syncRemotes(dt) {
   const net = G.net;
   if (!net) return;
   G.diagTimer = (G.diagTimer || 0) + dt;
   if (G.diagTimer >= 1) {
     G.diagTimer = 0;
-    const inLobby = ui.current === 'lobby';
-    if (inLobby) { renderNetDiag(); refreshLobby(); }
-    // Waiting alone happens in the lobby panel or free-roaming behind it
-    // ("자유 주행하며 대기", where no panel is up) — check both.
-    const d = (inLobby || ui.current === null) && G.phase === 'free' ? net.diagnostics() : null;
-    if (d && shouldAutoRejoin({ sinceJoin: d.sinceJoin, relaysOpen: d.relaysOpen, peers: d.peers.length, attempts: G.rejoins || 0 })) {
-      rejoinRoom(true);
-      return;
-    }
+    if (ui.current === 'lobby') { renderNetDiag(); refreshLobby(); }
   }
   for (const [id, peer] of net.peers) {
     if (!peer.profile || !peer.snaps.length) continue;
