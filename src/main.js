@@ -671,8 +671,9 @@ function profile() {
 /**
  * Input: room code; rejoin = true when re-entering the room we are in.
  * Output: promise, resolves once the session is up (or the join was abandoned).
- * Why rejoin is allowed from the lobby: a fresh entry is only valid from the
- * online form, but "다시 연결" and the automatic retry start in the lobby.
+ * Why rejoin is allowed from the lobby and free roam: a fresh entry is only
+ * valid from the online form, but "다시 연결" starts in the lobby and the
+ * automatic retry also fires while free-roaming alone.
  */
 async function joinOnline(code, { rejoin = false } = {}) {
   // The WebRTC stack is a separate chunk, fetched only when going online.
@@ -697,8 +698,12 @@ async function joinOnline(code, { rejoin = false } = {}) {
     btn.disabled = false;
     btn.textContent = '입장';
   }
-  // Abandoned while loading: another mode started, or the player left the form.
-  if (seq !== joinSeq || ui.current !== (rejoin ? 'lobby' : 'online')) return;
+  // Abandoned while loading: another mode started, or the player left the
+  // form. A re-entry starts in the lobby panel or in free roam behind it.
+  const from = ui.current;
+  if (seq !== joinSeq || (rejoin ? from !== 'lobby' && from !== null : from !== 'online')) return;
+  // Re-entered while free-roaming: keep driving instead of raising the lobby.
+  const keepDriving = rejoin && from === null;
   closeOnline();
   clearEntities();
   G.mode = 'online';
@@ -736,7 +741,7 @@ async function joinOnline(code, { rejoin = false } = {}) {
   renderNetDiag();
   history.replaceState(null, '', `#room=${code}`);
   refreshLobby();
-  ui.show('lobby');
+  if (!keepDriving) ui.show('lobby');
   hud.show(true);
   hud.setLights(0, false, false);
   trackScene.setStartLights(0, false);
@@ -966,12 +971,14 @@ function syncRemotes(dt) {
   const net = G.net;
   if (!net) return;
   G.diagTimer = (G.diagTimer || 0) + dt;
-  if (G.diagTimer >= 1 && ui.current === 'lobby') {
+  if (G.diagTimer >= 1) {
     G.diagTimer = 0;
-    renderNetDiag();
-    refreshLobby();
-    const d = net.diagnostics();
-    if (G.phase === 'free' && shouldAutoRejoin({ sinceJoin: d.sinceJoin, relaysOpen: d.relaysOpen, peers: d.peers.length, attempts: G.rejoins || 0 })) {
+    const inLobby = ui.current === 'lobby';
+    if (inLobby) { renderNetDiag(); refreshLobby(); }
+    // Waiting alone happens in the lobby panel or free-roaming behind it
+    // ("자유 주행하며 대기", where no panel is up) — check both.
+    const d = (inLobby || ui.current === null) && G.phase === 'free' ? net.diagnostics() : null;
+    if (d && shouldAutoRejoin({ sinceJoin: d.sinceJoin, relaysOpen: d.relaysOpen, peers: d.peers.length, attempts: G.rejoins || 0 })) {
       rejoinRoom(true);
       return;
     }
