@@ -1,6 +1,6 @@
 import * as THREE from 'three';
 import './style.css';
-import { Track, computeRacingLine } from './sim/track.js';
+import { Track, computeRacingLine, applyWeather, WEATHERS, WEATHER_LABELS } from './sim/track.js';
 import { Kart, KART_SPEC, collideKarts } from './sim/kart.js';
 import { AIDriver } from './sim/ai.js';
 import { RaceTracker, gridSlot } from './sim/race.js';
@@ -10,6 +10,7 @@ import { buildTrackScene, buildSky } from './render/trackScene.js';
 import { KartModel } from './render/kartModel.js';
 import { CameraRig, CAMERA_MODES, CAMERA_LABELS, noise1 } from './render/cameraRig.js';
 import { PostFX } from './render/postfx.js';
+import { Rain, WeatherLook } from './render/weather.js';
 import { SkidMarks } from './render/skidmarks.js';
 import { rubberTexture, nameTagTexture } from './render/textures.js';
 import { KartAudio } from './audio.js';
@@ -33,7 +34,7 @@ const isTouch = matchMedia('(pointer: coarse)').matches || navigator.maxTouchPoi
 const DEFAULTS = {
   camera: 'helmet', motionBlur: 1, cameraShake: 1, lensDistortion: true, driveMode: 'easy', volume: 0.8,
   // Phones start low and let the tuner raise it; desktops start high.
-  quality: isTouch ? 'low' : 'high', qualityAuto: isTouch, qualityCeiling: 'high', orientation: 'auto', name: '', color: COLORS[0], number: 12,
+  quality: isTouch ? 'low' : 'high', qualityAuto: isTouch, qualityCeiling: 'high', orientation: 'auto', weather: 'dry', name: '', color: COLORS[0], number: 12,
 };
 function loadSettings() {
   let saved = {};
@@ -73,8 +74,10 @@ const line = computeRacingLine(track);
 const scene = new THREE.Scene();
 scene.fog = new THREE.FogExp2(0x5a6384, 0.0026);
 const sunDir = new THREE.Vector3(-0.75, 0.2, -0.62).normalize();
-scene.add(buildSky(sunDir));
-scene.add(new THREE.HemisphereLight(0x8aa4dc, 0x3a2c26, 1.3));
+const sky = buildSky(sunDir);
+scene.add(sky);
+const hemi = new THREE.HemisphereLight(0x8aa4dc, 0x3a2c26, 1.3);
+scene.add(hemi);
 const sun = new THREE.DirectionalLight(0xffc49a, 1.15);
 sun.castShadow = renderer.shadowMap.enabled;
 sun.shadow.mapSize.setScalar(settings.quality === 'high' ? 2048 : 1024);
@@ -86,6 +89,9 @@ const trackScene = buildTrackScene(track, line, { quality: settings.quality });
 scene.add(trackScene.group);
 const skid = new SkidMarks(rubberTexture());
 scene.add(skid.mesh);
+const rain = new Rain(settings.quality);
+scene.add(rain.mesh);
+const weatherLook = new WeatherLook({ scene, renderer, sky, hemi, sun, trackScene, rain });
 
 const rig = new CameraRig(innerWidth / innerHeight);
 rig.setMode(settings.camera);
@@ -242,7 +248,22 @@ const G = {
   sendTimer: 0,
   wrongShown: 0,
   glLost: false,
+  weather: 'dry', // weather of the session being driven (online: the host's pick)
+  ghostWeather: null, // weather G.ghostBest was driven in
 };
+
+/**
+ * Input: weather id (untrusted for online — unknown ids become dry).
+ * Output: none; sets G.weather.
+ * Why one entry point: grip (track + AI speed profile), visuals and sound
+ * must switch together, or bots would brake for rain on a dry-looking track.
+ */
+function setWeather(id) {
+  G.weather = applyWeather(track, line, id);
+  weatherLook.apply(G.weather);
+  audio.setWet(G.weather === 'rain');
+}
+setWeather(settings.weather);
 
 
 function clearEntities() {
@@ -301,6 +322,7 @@ function startLocal(mode) {
   clearEntities();
   G.mode = mode;
   G.paused = false;
+  setWeather(settings.weather);
   const rand = mulberry32((Math.random() * 1e9) | 0);
   if (mode === 'race') {
     addBots(5, 0, rand);
@@ -314,6 +336,8 @@ function startLocal(mode) {
     G.tracker = new RaceTracker(track, 0);
     G.ghostRec = [];
     G.ghost = null;
+    // A dry ghost is unbeatable in the rain: each weather keeps its own record.
+    if (G.ghostWeather !== G.weather) { G.ghostBest = null; G.ghostBestTime = null; G.ghostWeather = G.weather; }
     // Storage wins when it has a record; otherwise keep this visit's (blocked storage).
     const saved = loadTrialRecord();
     if (saved) { G.ghostBest = saved.rec; G.ghostBestTime = saved.time; }
@@ -330,6 +354,7 @@ function startAttract() {
   clearEntities();
   G.mode = 'attract';
   G.phase = 'go';
+  setWeather(settings.weather);
   G.goTime = G.simTime;
   const rand = mulberry32(42);
   addBots(6, 0, rand);
@@ -466,16 +491,25 @@ function onRaceEvent(e, ev, rt) {
 }
 
 /**
+ * Input: none (reads G.weather). Output: localStorage key for the trial record.
+ * Why dry keeps the bare key: records saved before weather existed were all
+ * dry, so they stay valid without a migration.
+ */
+function trialKey() {
+  return G.weather === 'dry' ? GHOST_KEY : `${GHOST_KEY}.${G.weather}`;
+}
+
+/**
  * Input: none (reads localStorage). Output: { time, rec } or null.
  * Why null on any failure: blocked storage or a stale/corrupt blob must
  * never stop a time trial from starting — it just runs without a ghost.
  */
 function loadTrialRecord() {
-  try { return sanitizeGhost(JSON.parse(localStorage.getItem(GHOST_KEY) || 'null'), track.length); } catch { return null; }
+  try { return sanitizeGhost(JSON.parse(localStorage.getItem(trialKey()) || 'null'), track.length); } catch { return null; }
 }
 
 function saveTrialRecord(time, rec) {
-  try { localStorage.setItem(GHOST_KEY, JSON.stringify(encodeGhost({ time, rec, trackLength: track.length }))); } catch { /* storage full or blocked: the record lives for this visit only */ }
+  try { localStorage.setItem(trialKey(), JSON.stringify(encodeGhost({ time, rec, trackLength: track.length }))); } catch { /* storage full or blocked: the record lives for this visit only */ }
 }
 
 function spawnGhost() {
@@ -647,6 +681,8 @@ function handleRaceMsg(m, from) {
     G.remoteBest.clear();
     G.pendingFin.clear();
     const mySlot = G.grid.indexOf(G.net.selfId);
+    // Older hosts send no weather: they race in the dry.
+    setWeather(WEATHERS.includes(m.weather) ? m.weather : 'dry');
     G.tracker = new RaceTracker(track, clamp(Number(m.laps) || RACE_LAPS, 1, 10));
     if (mySlot >= 0 && G.player) {
       place(G.player, mySlot);
@@ -657,7 +693,8 @@ function handleRaceMsg(m, from) {
     startCountdown(G.simTime + (startWall - now()) / 1000, startWall);
     skid.clear();
     enterDriving();
-    hud.info(mySlot >= 0 ? `그리드 ${mySlot + 1}번에서 출발합니다` : '관전 중 — 다음 레이스에 참가할 수 있어요', 2500);
+    const wx = G.weather === 'dry' ? '' : ` · ${WEATHER_LABELS[G.weather]}`;
+    hud.info(mySlot >= 0 ? `그리드 ${mySlot + 1}번에서 출발합니다${wx}` : `관전 중 — 다음 레이스에 참가할 수 있어요${wx}`, 2500);
   } else if (m.type === 'lobby') {
     backToLobby();
   } else if (m.type === 'busy') {
@@ -693,7 +730,7 @@ function hostStart() {
   const ids = net.members().filter((id) => id === net.selfId || net.peers.get(id)?.snaps.length);
   // Shuffle the grid.
   for (let i = ids.length - 1; i > 0; i--) { const j = Math.floor(Math.random() * (i + 1)); [ids[i], ids[j]] = [ids[j], ids[i]]; }
-  const msg = { type: 'start', raceId: randomRoomCode(), startAt: now() + 5500, laps: RACE_LAPS, grid: ids.slice(0, 8) };
+  const msg = { type: 'start', raceId: randomRoomCode(), startAt: now() + 5500, laps: RACE_LAPS, grid: ids.slice(0, 8), weather: settings.weather };
   net.sendRace(msg);
   handleRaceMsg(msg, net.selfId);
 }
@@ -1038,6 +1075,31 @@ function setDriveMode(m) {
   document.getElementById('set-mode').value = m;
 }
 setDriveMode(settings.driveMode);
+
+// Weather picker on the main menu. The menu runs over the attract loop, so
+// the change shows (and sounds) straight away.
+const WEATHER_HINTS = {
+  dry: '마른 노면. 기본 그립.',
+  rain: '젖은 노면 — 그립이 줄어 제동 거리가 길어지고, 젖은 연석은 특히 미끄러워요. AI도 그만큼 조심해서 달려요. 온라인에서는 호스트의 날씨를 따라요.',
+};
+const weatherRow = document.getElementById('weather-pick');
+for (const w of WEATHERS) {
+  const b = document.createElement('button');
+  b.type = 'button';
+  b.dataset.weather = w;
+  b.textContent = WEATHER_LABELS[w];
+  b.onclick = () => pickWeather(w);
+  weatherRow.appendChild(b);
+}
+function pickWeather(w) {
+  if (!WEATHERS.includes(w)) return;
+  settings.weather = w;
+  saveSettings();
+  for (const b of weatherRow.children) b.classList.toggle('on', b.dataset.weather === w);
+  document.getElementById('weather-hint').textContent = WEATHER_HINTS[w];
+  if (G.mode === 'attract') setWeather(w);
+}
+pickWeather(settings.weather);
 document.getElementById('set-volume').oninput = (e) => { settings.volume = Number(e.target.value); audio.setVolume(settings.volume); saveSettings(); };
 document.getElementById('set-orient').onchange = (e) => setOrientation(e.target.value);
 document.getElementById('set-quality').onchange = (e) => {
@@ -1067,6 +1129,7 @@ document.addEventListener('visibilitychange', () => {
 // ---------------------------------------------------------------- frame
 let last = performance.now();
 const listener = { position: new THREE.Vector3(), forward: new THREE.Vector3() };
+const rainCam = new THREE.Vector3();
 
 /**
  * Online races run on the shared wall clock, not on simTime: simTime stalls
@@ -1132,7 +1195,8 @@ function frame(nowMs) {
     const k = e.kart;
     k.wheels.forEach((w, i) => {
       const s = w.sliding ? clamp((w.slip - 1.2) / 4, 0, 1) : 0;
-      skid.add(`${e.id}${i}`, w.x, w.z, 0, 0, i < 2 ? 0.12 : 0.19, s * 0.7);
+      // Water keeps the tyres from laying down much rubber.
+      skid.add(`${e.id}${i}`, w.x, w.z, 0, 0, i < 2 ? 0.12 : 0.19, s * (G.weather === 'rain' ? 0.25 : 0.7));
     });
   }
 
@@ -1161,9 +1225,17 @@ function frame(nowMs) {
   }
 
   trackScene.update(G.simTime);
+  rig.camera.getWorldPosition(rainCam);
+  rain.update(dt, rainCam);
   updateHud();
   hud.tick();
-  if (!G.glLost) post.render(G.simTime, rig.lens(f ? f.kart : { speed: 0 }, settings));
+  if (!G.glLost) {
+    const lens = rig.lens(f ? f.kart : { speed: 0 }, settings);
+    // Beads only on the helmet action cam: the chase views have no lens to wet.
+    lens.rain = G.weather === 'rain' && rig.mode === 'helmet' ? 1 : 0;
+    lens.speed = f ? f.kart.speed : 0;
+    post.render(G.simTime, lens);
+  }
 }
 
 const QUALITY_LABELS = { low: '낮음', medium: '보통', high: '높음' };

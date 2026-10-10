@@ -48,6 +48,7 @@ export class Track {
     this.halfWidth = def.halfWidth;
     this.curbWidth = def.curbWidth;
     this.barrier = def.halfWidth + def.apron;
+    this.weather = WEATHER.dry;
 
     // Dense closed spline.
     const pts = def.points;
@@ -207,6 +208,16 @@ export class Track {
     if (a > this.halfWidth - this.curbWidth && (lateral < 0 ? proj.curbL : proj.curbR)) return SURFACE.curb;
     return SURFACE.asphalt;
   }
+
+  /**
+   * Input: a SURFACE entry. Output: tyre grip factor on it in the current weather.
+   * Why separate from surf.grip: kart.surfaceGrip (dust drag, HUD) must keep
+   * meaning "which surface am I on" — a wet track is not an apron.
+   */
+  gripOf(surf) {
+    const w = this.weather;
+    return surf.grip * w.grip * (surf.id === SURFACE.curb.id ? w.curb : 1);
+  }
 }
 
 export const SURFACE = {
@@ -214,6 +225,20 @@ export const SURFACE = {
   curb: { id: 1, grip: 0.9, rumble: 1, drag: 0 },
   apron: { id: 2, grip: 0.84, rumble: 0.35, drag: 0.012 },
 };
+
+/**
+ * Weather presets. `grip` scales tyre friction on every surface; `curb` is an
+ * extra factor for the painted kerbs, which turn far slipperier than asphalt
+ * when wet. The rain values are game tuning, not measured data: enough to make
+ * braking points and corner speeds clearly earlier/lower without turning the
+ * rental kart into an ice skate.
+ */
+export const WEATHERS = ['dry', 'rain'];
+export const WEATHER = {
+  dry: { id: 'dry', grip: 1, curb: 1 },
+  rain: { id: 'rain', grip: 0.72, curb: 0.8 },
+};
+export const WEATHER_LABELS = { dry: '맑음', rain: '비' };
 
 /**
  * Minimum-curvature racing line (lateral offsets per sample) and the matching
@@ -243,6 +268,19 @@ export function computeRacingLine(track, { margin = 1.3, mu = 1.02, vMax = 23, b
     const la = Math.hypot(bx - ax, bz - az), lb = Math.hypot(cx - bx, cz - bz), lc = Math.hypot(cx - ax, cz - az);
     kappa[i] = (2 * cross) / (la * lb * lc);
   }
+  const base = { mu, vMax, brake };
+  return { offset: e, speed: speedProfile(track, kappa, base), kappa, base };
+}
+
+/**
+ * Input: track, line curvature per sample, {mu, vMax, brake}.
+ * Output: target speed per sample (m/s).
+ * Why split out: the line's shape does not depend on grip, but its speeds
+ * do — a weather change re-runs only this cheap pass, not the 2500-sweep
+ * line solve.
+ */
+export function speedProfile(track, kappa, { mu, vMax, brake }) {
+  const n = track.count;
   const v = new Float64Array(n);
   for (let i = 0; i < n; i++) v[i] = Math.min(vMax, Math.sqrt((mu * 9.81) / Math.max(1e-4, Math.abs(kappa[i]))));
   // Braking pass (run twice around the loop so it wraps correctly).
@@ -252,5 +290,21 @@ export function computeRacingLine(track, { margin = 1.3, mu = 1.02, vMax = 23, b
       v[i] = Math.min(v[i], Math.sqrt(v[nx] * v[nx] + 2 * brake * track.ds));
     }
   }
-  return { offset: e, speed: v, kappa };
+  return v;
+}
+
+/**
+ * Input: track, its racing line, weather id (anything — unknown ids mean dry).
+ * Output: the applied weather id.
+ * Why mutate in place: every AIDriver/DriveAssist holds the same `line`
+ * object and reads line.speed live, so they all slow down for the rain
+ * without being rebuilt. Corner speed scales with grip (v = sqrt(mu g / k))
+ * and so does the braking deceleration; top speed is engine-limited and stays.
+ */
+export function applyWeather(track, line, id) {
+  const w = WEATHER[id] || WEATHER.dry;
+  track.weather = w;
+  const b = line.base;
+  line.speed = speedProfile(track, line.kappa, { mu: b.mu * w.grip, vMax: b.vMax, brake: b.brake * w.grip });
+  return w.id;
 }
