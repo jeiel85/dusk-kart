@@ -3,7 +3,7 @@ import assert from 'node:assert/strict';
 import { Track } from '../src/sim/track.js';
 import { gridSlot } from '../src/sim/race.js';
 import {
-  sanitizeSnapshot, snapshotLimits, ProgressGuard, finishClaimPlausible, minRaceTime, NO_PROGRESS, MAX_SPEED,
+  sanitizeSnapshot, snapshotLimits, ProgressGuard, finishClaimPlausible, bestLapPlausible, minRaceTime, NO_PROGRESS, MAX_SPEED,
 } from '../src/netcheck.js';
 import { sanitizeSettings } from '../src/settings.js';
 import { ResolutionGovernor } from '../src/perf.js';
@@ -91,6 +91,18 @@ test('finish claims must fit the race clock and the track length', () => {
   assert.equal(finishClaimPlausible({ time: min - 1, laps, length: L, elapsed: NaN }), false, 'faster than physically possible');
   assert.equal(finishClaimPlausible({ time: Infinity, laps, length: L, elapsed: 10 }), false);
   assert.equal(finishClaimPlausible({ time: '150', laps, length: L, elapsed: 150 }), false, 'non-number');
+});
+
+test('best laps sent with a finish must fit inside that finish', () => {
+  const L = track.length, laps = 3;
+  const minLap = L / MAX_SPEED;
+  assert.equal(bestLapPlausible({ best: 48.2, time: 150, laps, length: L }), true, 'honest');
+  assert.equal(bestLapPlausible({ best: 50, time: 150, laps, length: L }), true, 'every lap equal');
+  assert.equal(bestLapPlausible({ best: 50.5, time: 150, laps, length: L }), false, 'slower than the average lap');
+  assert.equal(bestLapPlausible({ best: minLap - 0.1, time: 150, laps, length: L }), false, 'faster than physically possible');
+  assert.equal(bestLapPlausible({ best: null, time: 150, laps, length: L }), false, 'older build sends none');
+  assert.equal(bestLapPlausible({ best: '48', time: 150, laps, length: L }), false, 'non-number');
+  assert.equal(bestLapPlausible({ best: 48, time: 150, laps: 0, length: L }), false, 'no laps');
 });
 
 const OPTS = { cameraModes: ['helmet', 'chase', 'far'], driveModes: ['easy', 'normal', 'real'], colors: ['#2f6bff', '#e8322b'] };

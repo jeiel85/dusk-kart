@@ -126,3 +126,16 @@ export function finishClaimPlausible({ time, laps, length, elapsed, tolerance = 
   if (Number.isFinite(elapsed) && time < elapsed - tolerance) return false;
   return true;
 }
+
+/**
+ * Whether a peer's best lap, sent with its (already accepted) finish, is
+ * believable. Input: best lap and finish time (s), lap count, track length.
+ * Output: true to show it, false to show no best lap for that driver.
+ * Why these bounds: no lap can beat the speed cap, and the laps are timed
+ * from the first line crossing, so all `laps` laps fit inside the finish
+ * time — the best one can be at most the average.
+ */
+export function bestLapPlausible({ best, time, laps, length }) {
+  if (!Number.isFinite(best) || !Number.isFinite(time) || !(laps > 0)) return false;
+  return best >= length / MAX_SPEED && best <= time / laps + 1e-6;
+}

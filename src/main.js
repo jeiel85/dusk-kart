@@ -15,7 +15,8 @@ import { rubberTexture, nameTagTexture } from './render/textures.js';
 import { KartAudio } from './audio.js';
 import { Input } from './input.js';
 import { Hud, fmtTime, escapeHtml } from './hud.js';
-import { randomRoomCode, now, snapshotLimits, finishClaimPlausible, NO_PROGRESS } from './netcheck.js';
+import { randomRoomCode, now, snapshotLimits, finishClaimPlausible, bestLapPlausible, NO_PROGRESS } from './netcheck.js';
+import { GHOST_DT, GHOST_KEY, encodeGhost, sanitizeGhost } from './ghost.js';
 import { sanitizeSettings, QUALITIES } from './settings.js';
 import { applyOrientation, buttonTarget, ORIENTATION_LABELS } from './orientation.js';
 import { ResolutionGovernor, QualityTuner, QUALITY_STEPS } from './perf.js';
@@ -230,10 +231,12 @@ const G = {
   lastReset: -10,
   ghostRec: [],
   ghostBest: null,
+  ghostBestTime: null, // lap time of ghostBest (s)
   net: null,
   raceId: null,
   grid: [],
   remoteFin: new Map(),
+  remoteBest: new Map(), // best laps that came with confirmed finishes
   pendingFin: new Map(), // finish claims waiting for the peer's progress to confirm them
   goWall: null, // online: start signal on our wall clock (ms); race time follows it
   sendTimer: 0,
@@ -311,6 +314,9 @@ function startLocal(mode) {
     G.tracker = new RaceTracker(track, 0);
     G.ghostRec = [];
     G.ghost = null;
+    // Storage wins when it has a record; otherwise keep this visit's (blocked storage).
+    const saved = loadTrialRecord();
+    if (saved) { G.ghostBest = saved.rec; G.ghostBestTime = saved.time; }
   }
   for (const e of G.entities) G.tracker.add(e.id, e.kart.s, 0);
   rig.setMode(settings.camera);
@@ -403,8 +409,11 @@ function simStep(h) {
   }
   if (G.mode === 'trial' && G.phase === 'go' && G.player) {
     G.ghostTick = (G.ghostTick || 0) + h;
-    if (G.ghostTick >= 0.05) {
-      G.ghostTick = 0;
+    // Subtract instead of zeroing, with a float epsilon: 12 steps of 1/240 s
+    // sum to just under 0.05, and zeroing sampled every 13th step — the
+    // ghost then replayed ~8% faster than it was driven.
+    if (G.ghostTick >= GHOST_DT - 1e-9) {
+      G.ghostTick -= GHOST_DT;
       const k = G.player.kart;
       G.ghostRec.push([k.x, k.z, k.heading, k.steer]);
     }
@@ -415,21 +424,30 @@ function onRaceEvent(e, ev, rt) {
   const entry = G.tracker.entries.get(e.id);
   if (e.kind !== 'player') return;
   if (ev === 'start') {
-    if (G.mode === 'trial') G.ghostRec = [];
+    if (G.mode === 'trial') {
+      G.ghostRec = [];
+      G.ghostTick = GHOST_DT - STEP; // sample on this crossing step: replay starts here
+      // A record from an earlier visit races from the first crossing.
+      if (G.ghostBest) spawnGhost();
+    }
     return;
   }
   if (ev === 'lap') {
     const lt = entry.lastLap;
     if (G.mode === 'trial') {
-      const improved = entry.bestLap === lt;
-      const prevBest = entry.lapTimes.length > 1 ? Math.min(...entry.lapTimes.slice(0, -1)) : null;
-      const delta = prevBest !== null ? ` (${lt - prevBest >= 0 ? '+' : ''}${(lt - prevBest).toFixed(3)})` : '';
+      // Compare against the saved record (= the ghost on track), not just this session.
+      const ref = G.ghostBestTime;
+      const improved = ref === null || lt < ref;
+      const delta = ref !== null ? ` (${lt - ref >= 0 ? '+' : ''}${(lt - ref).toFixed(3)})` : '';
       hud.flash(`${fmtTime(lt)}${delta}`, 2200, improved ? 'good' : 'warn');
       if (improved) {
         G.ghostBest = G.ghostRec;
+        G.ghostBestTime = lt;
+        saveTrialRecord(lt, G.ghostRec);
         spawnGhost();
       }
       G.ghostRec = [];
+      G.ghostTick = GHOST_DT - STEP;
       G.ghostT0 = G.simTime;
       return;
     }
@@ -443,8 +461,21 @@ function onRaceEvent(e, ev, rt) {
     e.autopilot = true;
     if (!e.ai) e.ai = new AIDriver(track, line, { pace: 0.8, seed: 5 });
     G.finishAt = G.simTime;
-    if (G.mode === 'online' && G.net) G.net.sendFinish({ raceId: G.raceId, time: rt });
+    if (G.mode === 'online' && G.net) G.net.sendFinish({ raceId: G.raceId, time: rt, best: entry.bestLap });
   }
+}
+
+/**
+ * Input: none (reads localStorage). Output: { time, rec } or null.
+ * Why null on any failure: blocked storage or a stale/corrupt blob must
+ * never stop a time trial from starting — it just runs without a ghost.
+ */
+function loadTrialRecord() {
+  try { return sanitizeGhost(JSON.parse(localStorage.getItem(GHOST_KEY) || 'null'), track.length); } catch { return null; }
+}
+
+function saveTrialRecord(time, rec) {
+  try { localStorage.setItem(GHOST_KEY, JSON.stringify(encodeGhost({ time, rec, trackLength: track.length }))); } catch { /* storage full or blocked: the record lives for this visit only */ }
 }
 
 function spawnGhost() {
@@ -457,7 +488,7 @@ function spawnGhost() {
 function updateGhost() {
   const g = G.ghost;
   if (!g || !G.ghostBest || G.ghostBest.length < 2) return;
-  const f = (G.simTime - G.ghostT0) / 0.05;
+  const f = (G.simTime - G.ghostT0) / GHOST_DT;
   const i = Math.floor(f);
   if (i >= G.ghostBest.length - 1) { g.model.root.visible = false; return; }
   g.model.root.visible = true;
@@ -465,10 +496,10 @@ function updateGhost() {
   let dh = b[2] - a[2];
   dh = Math.atan2(Math.sin(dh), Math.cos(dh));
   const K = g.kart;
-  K.vx = (b[0] - a[0]) / 0.05; K.vz = (b[1] - a[1]) / 0.05;
+  K.vx = (b[0] - a[0]) / GHOST_DT; K.vz = (b[1] - a[1]) / GHOST_DT;
   K.x = a[0] + (b[0] - a[0]) * k; K.z = a[1] + (b[1] - a[1]) * k;
   K.heading = a[2] + dh * k; K.steer = a[3];
-  K.omega = dh / 0.05;
+  K.omega = dh / GHOST_DT;
 }
 
 // ---------------------------------------------------------------- standings
@@ -483,7 +514,7 @@ function raceRows() {
         const e = G.entities.find((x) => x.id === id);
         if (!e) continue;
         const fin = G.remoteFin.get(id);
-        rows.push({ id, name: e.name, color: e.color, progress: e.kart.progress ?? -1e9, finished: fin !== undefined, time: fin, best: e.kart.best ?? null });
+        rows.push({ id, name: e.name, color: e.color, progress: e.kart.progress ?? -1e9, finished: fin !== undefined, time: fin, best: G.remoteBest.get(id) ?? null });
       }
     }
   } else if (G.tracker) {
@@ -529,6 +560,7 @@ function closeOnline() {
   if (G.net) { G.net.leave(); G.net = null; }
   hud.netStatus('');
   G.remoteFin.clear();
+  G.remoteBest.clear();
   G.pendingFin.clear();
   G.grid = [];
   G.goWall = null;
@@ -612,6 +644,7 @@ function handleRaceMsg(m, from) {
     G.raceId = String(m.raceId);
     G.grid = m.grid.filter((x) => typeof x === 'string').slice(0, 8);
     G.remoteFin.clear();
+    G.remoteBest.clear();
     G.pendingFin.clear();
     const mySlot = G.grid.indexOf(G.net.selfId);
     G.tracker = new RaceTracker(track, clamp(Number(m.laps) || RACE_LAPS, 1, 10));
@@ -673,8 +706,10 @@ function onRemoteFinish(m, from) {
     console.warn('[net] rejected finish claim', { from, time: m.time, elapsed });
     return;
   }
+  // Older builds send no best lap; a bad one only blanks that cell, the finish still counts.
+  const best = bestLapPlausible({ best: m.best, time: m.time, laps: G.tracker.laps, length: track.length }) ? m.best : null;
   // Only count it once that peer's own snapshots show it past the line.
-  G.pendingFin.set(from, { time: m.time, until: now() + 10000 });
+  G.pendingFin.set(from, { time: m.time, best, until: now() + 10000 });
 }
 
 /** Promote finish claims whose peer's (rate-limited) progress backs them up. */
@@ -685,6 +720,7 @@ function confirmFinishes() {
     const progress = G.net.peers.get(id)?.progress.value;
     if (progress !== null && progress !== undefined && progress >= need) {
       G.remoteFin.set(id, claim.time);
+      G.remoteBest.set(id, claim.best);
       G.pendingFin.delete(id);
     } else if (now() > claim.until) {
       console.warn('[net] finish claim never confirmed by progress', { id, progress, need });
@@ -1214,7 +1250,8 @@ function updateHud() {
     laps: G.tracker ? G.tracker.laps : 0,
     cur: en && en.lapStart !== null && !en.finished && G.phase === 'go' ? rt - en.lapStart : null,
     last: en?.lastLap ?? null,
-    best: en?.bestLap ?? null,
+    // Trial: the saved record (the ghost), which no session lap can be below.
+    best: (G.mode === 'trial' ? G.ghostBestTime : en?.bestLap) ?? null,
     kmh: k.speed * 3.6,
     rpm: k.rpm,
   });
