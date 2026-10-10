@@ -263,6 +263,9 @@ export function bannerTexture(text, bg = '#101820', fg = '#ffb347') {
   x.fillRect(0, 0, 1024, 128);
   x.fillStyle = fg;
   x.font = 'italic 900 88px "Arial Black", Arial, sans-serif';
+  // Course names differ in length: shrink to fit rather than clip.
+  const w = x.measureText(text).width;
+  if (w > 980) x.font = `italic 900 ${Math.floor(88 * 980 / w)}px "Arial Black", Arial, sans-serif`;
   x.textAlign = 'center'; x.textBaseline = 'middle';
   x.fillText(text, 512, 68);
   return toTexture(c, { repeat: false });

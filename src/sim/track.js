@@ -8,6 +8,7 @@ import { clamp, wrapDelta } from './math.js';
 export const TRACK_DEF = {
   id: 'lumen',
   name: 'Lumen Park Circuit',
+  tag: 'CLUB', // start-gantry banner
   halfWidth: 4.5,
   apron: 1.1,
   curbWidth: 0.9,
@@ -33,6 +34,7 @@ export const TRACK_DEF = {
 export const GP_DEF = {
   id: 'gp',
   name: 'Lumen Park GP',
+  tag: 'GP', // start-gantry banner
   halfWidth: 4.5,
   apron: 1.1,
   curbWidth: 0.9,
@@ -55,6 +57,7 @@ export const GP_DEF = {
 export const SPRINT_DEF = {
   id: 'sprint',
   name: 'Lumen Park Sprint',
+  tag: 'SPRINT', // start-gantry banner
   halfWidth: 4.5,
   apron: 1.1,
   curbWidth: 0.9,
@@ -74,6 +77,7 @@ export const SPRINT_DEF = {
 export const TECH_DEF = {
   id: 'tech',
   name: 'Lumen Park Technical',
+  tag: 'TECHNICAL', // start-gantry banner
   halfWidth: 4.5,
   apron: 1.1,
   curbWidth: 0.9,
@@ -93,6 +97,7 @@ export const TECH_DEF = {
 export const ENDURANCE_DEF = {
   id: 'endurance',
   name: 'Lumen Park Endurance',
+  tag: 'ENDURANCE', // start-gantry banner
   halfWidth: 4.5,
   apron: 1.1,
   curbWidth: 0.9,
