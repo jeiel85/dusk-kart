@@ -55,6 +55,12 @@ export class Hud {
 
   show(on) { this.el.hidden = !on; }
 
+  /** Redraws the minimap for a newly selected course. */
+  setTrack(track, line) {
+    this.track = track;
+    this.prepareMap(line);
+  }
+
   prepareMap(line) {
     const t = this.track;
     let minX = Infinity, maxX = -Infinity, minZ = Infinity, maxZ = -Infinity;

@@ -125,6 +125,12 @@ export class WeatherLook {
     this.id = null;
   }
 
+  /** A course change builds a new track scene: give it the current wet state. */
+  setTrackScene(trackScene) {
+    this.p.trackScene = trackScene;
+    trackScene.setWet(this.id === 'rain');
+  }
+
   apply(id) {
     id = LOOKS[id] ? id : 'dry';
     if (this.id === id) return;

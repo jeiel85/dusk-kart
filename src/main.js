@@ -1,6 +1,6 @@
 import * as THREE from 'three';
 import './style.css';
-import { Track, computeRacingLine, applyWeather, WEATHERS, WEATHER_LABELS } from './sim/track.js';
+import { Track, computeRacingLine, applyWeather, WEATHERS, WEATHER_LABELS, TRACKS, TRACK_IDS, TRACK_LABELS } from './sim/track.js';
 import { Kart, KART_SPEC, collideKarts } from './sim/kart.js';
 import { AIDriver } from './sim/ai.js';
 import { RaceTracker, gridSlot } from './sim/race.js';
@@ -34,7 +34,7 @@ const isTouch = matchMedia('(pointer: coarse)').matches || navigator.maxTouchPoi
 const DEFAULTS = {
   camera: 'helmet', motionBlur: 1, cameraShake: 1, lensDistortion: true, driveMode: 'easy', volume: 0.8,
   // Phones start low and let the tuner raise it; desktops start high.
-  quality: isTouch ? 'low' : 'high', qualityAuto: isTouch, qualityCeiling: 'high', orientation: 'auto', weather: 'dry', name: '', color: COLORS[0], number: 12,
+  quality: isTouch ? 'low' : 'high', qualityAuto: isTouch, qualityCeiling: 'high', orientation: 'auto', weather: 'dry', track: 'lumen', name: '', color: COLORS[0], number: 12,
 };
 function loadSettings() {
   let saved = {};
@@ -68,8 +68,9 @@ const governor = new ResolutionGovernor();
 const tuner = settings.qualityAuto && !qualityParam ? new QualityTuner(settings.quality, settings.qualityCeiling) : null;
 const pixelRatio = () => Math.min(window.devicePixelRatio || 1, settings.quality === 'high' ? 1.5 : settings.quality === 'medium' ? 1.1 : 0.85) * governor.scale;
 
-const track = new Track();
-const line = computeRacingLine(track);
+// Swapped as a whole by setTrack(); everything that reads them does so live.
+let track = new Track(TRACKS[settings.track]);
+let line = computeRacingLine(track);
 
 const scene = new THREE.Scene();
 scene.fog = new THREE.FogExp2(0x5a6384, 0.0026);
@@ -85,7 +86,7 @@ Object.assign(sun.shadow.camera, { left: -28, right: 28, top: 28, bottom: -28, n
 sun.shadow.bias = -0.0004;
 sun.shadow.normalBias = 0.03;
 scene.add(sun, sun.target);
-const trackScene = buildTrackScene(track, line, { quality: settings.quality });
+let trackScene = buildTrackScene(track, line, { quality: settings.quality });
 scene.add(trackScene.group);
 const skid = new SkidMarks(rubberTexture());
 scene.add(skid.mesh);
@@ -101,7 +102,10 @@ const audio = new KartAudio();
 audio.volume = settings.volume;
 const input = new Input(document.getElementById('touch'));
 input.device = isTouch ? 'touch' : 'keyboard';
-const driveAssist = new DriveAssist(track, line);
+let driveAssist = new DriveAssist(track, line);
+// One object for the page's lifetime: NetSession keeps a reference, and
+// setTrack() refreshes its fields in place for the new course.
+const netLimits = snapshotLimits(track);
 const BOT_ASSISTS = { countersteer: true, brakeAssist: true };
 const hud = new Hud(track, line);
 
@@ -249,7 +253,7 @@ const G = {
   wrongShown: 0,
   glLost: false,
   weather: 'dry', // weather of the session being driven (online: the host's pick)
-  ghostWeather: null, // weather G.ghostBest was driven in
+  ghostFor: null, // "course/weather" G.ghostBest was driven in
 };
 
 /**
@@ -264,6 +268,48 @@ function setWeather(id) {
   audio.setWet(G.weather === 'rain');
 }
 setWeather(settings.weather);
+
+/** Frees the GPU buffers and textures of a scene subtree that is being dropped. */
+function disposeTree(root) {
+  root.traverse((o) => {
+    o.geometry?.dispose();
+    for (const m of [o.material].flat()) {
+      if (!m) continue;
+      for (const v of Object.values(m)) if (v?.isTexture) v.dispose();
+      m.dispose();
+    }
+  });
+}
+
+/**
+ * Input: course id (untrusted for online — unknown ids become the club layout).
+ * Output: true when the course actually changed.
+ * Why swap at runtime instead of reloading the page (as the quality setting
+ * does): online, the host picks the course and a reload would drop the P2P
+ * session. Callers re-place their karts afterwards; bots' drivers are
+ * pointed at the new line here so an autopilot never steers for the old one.
+ */
+function setTrack(id) {
+  if (!TRACKS[id]) id = 'lumen';
+  if (track.id === id) return false;
+  track = new Track(TRACKS[id]);
+  line = computeRacingLine(track);
+  scene.remove(trackScene.group);
+  disposeTree(trackScene.group);
+  trackScene = buildTrackScene(track, line, { quality: settings.quality });
+  scene.add(trackScene.group);
+  weatherLook.setTrackScene(trackScene);
+  driveAssist = new DriveAssist(track, line);
+  hud.setTrack(track, line);
+  Object.assign(netLimits, snapshotLimits(track));
+  for (const e of G.entities) {
+    if (e.ai) { e.ai.track = track; e.ai.line = line; e.ai.passDir?.clear(); }
+  }
+  skid.clear();
+  // Grip and the AI speed profile belong to the line just built.
+  setWeather(G.weather);
+  return true;
+}
 
 
 function clearEntities() {
@@ -322,6 +368,7 @@ function startLocal(mode) {
   clearEntities();
   G.mode = mode;
   G.paused = false;
+  setTrack(settings.track);
   setWeather(settings.weather);
   const rand = mulberry32((Math.random() * 1e9) | 0);
   if (mode === 'race') {
@@ -336,8 +383,10 @@ function startLocal(mode) {
     G.tracker = new RaceTracker(track, 0);
     G.ghostRec = [];
     G.ghost = null;
-    // A dry ghost is unbeatable in the rain: each weather keeps its own record.
-    if (G.ghostWeather !== G.weather) { G.ghostBest = null; G.ghostBestTime = null; G.ghostWeather = G.weather; }
+    // Each course and weather keeps its own record: a dry ghost is
+    // unbeatable in the rain, and one from another course is meaningless.
+    const ghostFor = `${track.id}/${G.weather}`;
+    if (G.ghostFor !== ghostFor) { G.ghostBest = null; G.ghostBestTime = null; G.ghostFor = ghostFor; }
     // Storage wins when it has a record; otherwise keep this visit's (blocked storage).
     const saved = loadTrialRecord();
     if (saved) { G.ghostBest = saved.rec; G.ghostBestTime = saved.time; }
@@ -354,6 +403,7 @@ function startAttract() {
   clearEntities();
   G.mode = 'attract';
   G.phase = 'go';
+  setTrack(settings.track);
   setWeather(settings.weather);
   G.goTime = G.simTime;
   const rand = mulberry32(42);
@@ -491,12 +541,13 @@ function onRaceEvent(e, ev, rt) {
 }
 
 /**
- * Input: none (reads G.weather). Output: localStorage key for the trial record.
- * Why dry keeps the bare key: records saved before weather existed were all
- * dry, so they stay valid without a migration.
+ * Input: none (reads track.id, G.weather). Output: localStorage key for the trial record.
+ * Why the club course in the dry keeps the bare key: records saved before
+ * courses and weather existed were all that, so they stay valid without a
+ * migration.
  */
 function trialKey() {
-  return G.weather === 'dry' ? GHOST_KEY : `${GHOST_KEY}.${G.weather}`;
+  return GHOST_KEY + (track.id === 'lumen' ? '' : `.${track.id}`) + (G.weather === 'dry' ? '' : `.${G.weather}`);
 }
 
 /**
@@ -587,7 +638,6 @@ function showResults() {
 
 // ---------------------------------------------------------------- online
 let joinSeq = 0; // bumps whenever a pending join must be abandoned
-const netLimits = snapshotLimits(track);
 
 function closeOnline() {
   joinSeq++;
@@ -601,7 +651,7 @@ function closeOnline() {
 }
 
 function profile() {
-  return { name: settings.name || 'Driver', color: settings.color, number: settings.number };
+  return { name: settings.name || 'Driver', color: settings.color, number: settings.number, track: settings.track };
 }
 
 async function joinOnline(code) {
@@ -654,6 +704,8 @@ async function joinOnline(code) {
     onError: (msg) => hud.info(msg, 4000),
   });
   G.net = net;
+  // Alone, we are the host: our own course until a host's profile says otherwise.
+  setTrack(settings.track);
   addPlayer(Math.floor(Math.random() * 6));
   rig.setMode(settings.camera);
   document.getElementById('lobby-code').textContent = code;
@@ -681,7 +733,8 @@ function handleRaceMsg(m, from) {
     G.remoteBest.clear();
     G.pendingFin.clear();
     const mySlot = G.grid.indexOf(G.net.selfId);
-    // Older hosts send no weather: they race in the dry.
+    // Untrusted: a missing or unknown value means the club layout in the dry.
+    setTrack(TRACK_IDS.includes(m.track) ? m.track : 'lumen');
     setWeather(WEATHERS.includes(m.weather) ? m.weather : 'dry');
     G.tracker = new RaceTracker(track, clamp(Number(m.laps) || RACE_LAPS, 1, 10));
     if (mySlot >= 0 && G.player) {
@@ -693,7 +746,7 @@ function handleRaceMsg(m, from) {
     startCountdown(G.simTime + (startWall - now()) / 1000, startWall);
     skid.clear();
     enterDriving();
-    const wx = G.weather === 'dry' ? '' : ` · ${WEATHER_LABELS[G.weather]}`;
+    const wx = ` · ${TRACK_LABELS[track.id]} 코스${G.weather === 'dry' ? '' : ` · ${WEATHER_LABELS[G.weather]}`}`;
     hud.info(mySlot >= 0 ? `그리드 ${mySlot + 1}번에서 출발합니다${wx}` : `관전 중 — 다음 레이스에 참가할 수 있어요${wx}`, 2500);
   } else if (m.type === 'lobby') {
     backToLobby();
@@ -730,7 +783,7 @@ function hostStart() {
   const ids = net.members().filter((id) => id === net.selfId || net.peers.get(id)?.snaps.length);
   // Shuffle the grid.
   for (let i = ids.length - 1; i > 0; i--) { const j = Math.floor(Math.random() * (i + 1)); [ids[i], ids[j]] = [ids[j], ids[i]]; }
-  const msg = { type: 'start', raceId: randomRoomCode(), startAt: now() + 5500, laps: RACE_LAPS, grid: ids.slice(0, 8), weather: settings.weather };
+  const msg = { type: 'start', raceId: randomRoomCode(), startAt: now() + 5500, laps: RACE_LAPS, grid: ids.slice(0, 8), track: settings.track, weather: settings.weather };
   net.sendRace(msg);
   handleRaceMsg(msg, net.selfId);
 }
@@ -795,9 +848,27 @@ function backToLobby() {
   ui.show('lobby');
 }
 
+/**
+ * Input: none (reads the current host). Output: none.
+ * Why on every lobby refresh: the host is simply the lowest peer id, so it
+ * can change whenever someone joins or leaves — and snapshot checks reject
+ * karts that are off our course, so the whole room must drive the host's.
+ * Never mid-race: the start message already fixed that race's course.
+ */
+function syncRoomTrack() {
+  const net = G.net;
+  if (!net || G.phase !== 'free') return;
+  const want = net.isHost ? settings.track : net.peers.get(net.hostId)?.profile?.track;
+  if (!want || !setTrack(want)) return;
+  if (G.player) place(G.player, Math.floor(Math.random() * 6));
+  rig.snap = true;
+  hud.info(`코스: ${TRACK_LABELS[track.id]} 코스${net.isHost ? '' : ' (호스트 선택)'}`, 2500);
+}
+
 function refreshLobby() {
   const net = G.net;
   if (!net) return;
+  syncRoomTrack();
   const list = document.getElementById('lobby-list');
   const members = net.members();
   list.innerHTML = members.map((id) => {
@@ -1079,8 +1150,8 @@ setDriveMode(settings.driveMode);
 // Weather picker on the main menu. The menu runs over the attract loop, so
 // the change shows (and sounds) straight away.
 const WEATHER_HINTS = {
-  dry: '마른 노면. 기본 그립.',
-  rain: '젖은 노면 — 그립이 줄어 제동 거리가 길어지고, 젖은 연석은 특히 미끄러워요. AI도 그만큼 조심해서 달려요. 온라인에서는 호스트의 날씨를 따라요.',
+  dry: '마른 노면, 기본 그립.',
+  rain: '그립↓ 제동 거리↑ · 젖은 연석은 특히 미끄러워요 (온라인은 호스트 날씨).',
 };
 const weatherRow = document.getElementById('weather-pick');
 for (const w of WEATHERS) {
@@ -1100,6 +1171,34 @@ function pickWeather(w) {
   if (G.mode === 'attract') setWeather(w);
 }
 pickWeather(settings.weather);
+
+// Course picker on the main menu; like the weather, it shows at once behind the menu.
+const TRACK_HINTS = {
+  lumen: '864 m · 촘촘한 인필드 코너가 이어지는 기본 코스.',
+  sprint: '471 m · 짧고 빠른 한 바퀴, 무리가 붙어 다니는 코스.',
+  tech: '786 m · S자와 방향 전환이 이어지는 가장 까다로운 코스.',
+  gp: '1.03 km · 공원 북쪽·서쪽을 크게 도는 빠른 코스.',
+  endurance: '1.15 km · 공원 바깥을 크게 도는 가장 긴 고속 코스.',
+};
+const trackRow = document.getElementById('track-pick');
+for (const id of TRACK_IDS) {
+  const b = document.createElement('button');
+  b.type = 'button';
+  b.dataset.track = id;
+  b.textContent = TRACK_LABELS[id];
+  b.onclick = () => pickTrack(id);
+  trackRow.appendChild(b);
+}
+function pickTrack(id) {
+  if (!TRACK_IDS.includes(id)) return;
+  settings.track = id;
+  saveSettings();
+  for (const b of trackRow.children) b.classList.toggle('on', b.dataset.track === id);
+  document.getElementById('track-hint').textContent = `${TRACK_HINTS[id]} (온라인은 호스트 코스)`;
+  // The attract field is spread around the old course: restart it on the new one.
+  if (G.mode === 'attract' && track.id !== id) startAttract();
+}
+pickTrack(settings.track);
 document.getElementById('set-volume').oninput = (e) => { settings.volume = Number(e.target.value); audio.setVolume(settings.volume); saveSettings(); };
 document.getElementById('set-orient').onchange = (e) => setOrientation(e.target.value);
 document.getElementById('set-quality').onchange = (e) => {

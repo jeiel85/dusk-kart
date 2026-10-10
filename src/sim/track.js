@@ -6,6 +6,7 @@ import { clamp, wrapDelta } from './math.js';
  * the car travels in point order (east along the main straight first).
  */
 export const TRACK_DEF = {
+  id: 'lumen',
   name: 'Lumen Park Circuit',
   halfWidth: 4.5,
   apron: 1.1,
@@ -21,6 +22,97 @@ export const TRACK_DEF = {
     [-96, -24], [-116, -38], [-112, -56],
   ],
 };
+
+/**
+ * Long layout ("Lumen Park GP"): the same main straight, start gantry and
+ * funfair, then a wide loop around the north and west of the park. Faster,
+ * flowing bends instead of the club layout's tight infield. Checked the same
+ * way as the club layout (tests/tracks.test.js): minimum radius, clearance
+ * between non-adjacent parts, and distance to the funfair and clubhouse.
+ */
+export const GP_DEF = {
+  id: 'gp',
+  name: 'Lumen Park GP',
+  halfWidth: 4.5,
+  apron: 1.1,
+  curbWidth: 0.9,
+  start: [-5, -61],
+  points: [
+    [-90, -60], [-20, -62], [50, -60],
+    [95, -50], [118, -20], [120, 20], [100, 45], [70, 40],
+    [55, 60], [70, 90], [110, 110], [115, 145], [80, 160],
+    [30, 150], [0, 120], [-30, 130], [-70, 150], [-110, 135],
+    [-125, 95], [-100, 70], [-70, 60], [-60, 30], [-85, 5],
+    [-120, -10], [-130, -40], [-115, -58],
+  ],
+};
+
+/**
+ * Short layout ("Lumen Park Sprint", ~470 m): main straight, a right-hander
+ * at the east end and straight back along the south of the infield. Laps are
+ * quick and the pack stays together.
+ */
+export const SPRINT_DEF = {
+  id: 'sprint',
+  name: 'Lumen Park Sprint',
+  halfWidth: 4.5,
+  apron: 1.1,
+  curbWidth: 0.9,
+  start: [-5, -61],
+  points: [
+    [-90, -60], [-20, -62], [50, -60], [85, -45], [92, -15],
+    [65, 2], [25, -8], [0, 8], [-40, 4], [-72, -8],
+    [-96, -24], [-108, -38], [-106, -53],
+  ],
+};
+
+/**
+ * Twisty layout ("Lumen Park Technical", ~790 m): esses on the east side and
+ * a run of direction changes through the middle of the park. Short, but the
+ * slowest average speed of the five.
+ */
+export const TECH_DEF = {
+  id: 'tech',
+  name: 'Lumen Park Technical',
+  halfWidth: 4.5,
+  apron: 1.1,
+  curbWidth: 0.9,
+  start: [-5, -61],
+  points: [
+    [-90, -60], [-20, -62], [50, -60], [82, -50], [94, -25], [82, 0],
+    [74, 22], [92, 44], [110, 44], [123, 55], [118, 78], [94, 86],
+    [72, 106], [40, 102], [28, 74], [8, 54], [-22, 64], [-52, 86],
+    [-86, 76], [-96, 44], [-84, 18], [-100, -6], [-126, -28], [-120, -56],
+  ],
+};
+
+/**
+ * Longest layout ("Lumen Park Endurance", ~1.15 km): sweeps far out around
+ * the whole park with long, fast bends.
+ */
+export const ENDURANCE_DEF = {
+  id: 'endurance',
+  name: 'Lumen Park Endurance',
+  halfWidth: 4.5,
+  apron: 1.1,
+  curbWidth: 0.9,
+  start: [-5, -61],
+  points: [
+    [-90, -60], [-20, -62], [50, -60], [110, -58], [150, -40], [175, 0],
+    [150, 40], [180, 80], [170, 140], [120, 190], [60, 180], [25, 150],
+    [-10, 170], [-60, 200], [-120, 190], [-170, 140], [-180, 80],
+    [-150, 40], [-175, 0], [-160, -40], [-122, -60],
+  ],
+};
+
+/**
+ * Selectable layouts, shortest first after the original; ids are what
+ * settings and the network carry. Labels are short so five fit on one row
+ * of the phone menu — say "코스" after them in sentences.
+ */
+export const TRACKS = { lumen: TRACK_DEF, sprint: SPRINT_DEF, tech: TECH_DEF, gp: GP_DEF, endurance: ENDURANCE_DEF };
+export const TRACK_IDS = Object.keys(TRACKS);
+export const TRACK_LABELS = { lumen: '클럽', sprint: '스프린트', tech: '테크니컬', gp: 'GP', endurance: '엔듀로' };
 
 function centripetal(p0, p1, p2, p3, t) {
   const d = (a, b) => Math.max(1e-4, Math.sqrt(Math.hypot(b[0] - a[0], b[1] - a[1])));
@@ -44,6 +136,7 @@ function centripetal(p0, p1, p2, p3, t) {
 export class Track {
   constructor(def = TRACK_DEF, spacing = 1) {
     this.def = def;
+    this.id = def.id;
     this.name = def.name;
     this.halfWidth = def.halfWidth;
     this.curbWidth = def.curbWidth;
