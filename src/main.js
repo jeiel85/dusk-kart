@@ -396,6 +396,7 @@ function startLocal(mode) {
   startCountdown(G.simTime + (mode === 'trial' ? 5.5 : 6.4));
   if (mode === 'trial') G.lightsStart = G.goTime - 5.2;
   enterDriving();
+  hud.info(`${TRACK_LABELS[track.id]} 코스 · ${WEATHER_LABELS[G.weather]}`, 2500);
 }
 
 function startAttract() {
@@ -541,13 +542,26 @@ function onRaceEvent(e, ev, rt) {
 }
 
 /**
- * Input: none (reads track.id, G.weather). Output: localStorage key for the trial record.
+ * Input: course id and weather (default: what is being driven now).
+ * Output: localStorage key for that trial record.
  * Why the club course in the dry keeps the bare key: records saved before
  * courses and weather existed were all that, so they stay valid without a
  * migration.
  */
-function trialKey() {
-  return GHOST_KEY + (track.id === 'lumen' ? '' : `.${track.id}`) + (G.weather === 'dry' ? '' : `.${G.weather}`);
+function trialKey(trackId = track.id, weather = G.weather) {
+  return GHOST_KEY + (trackId === 'lumen' ? '' : `.${trackId}`) + (weather === 'dry' ? '' : `.${weather}`);
+}
+
+const courseLengths = {};
+/**
+ * Input: course id and weather. Output: saved best lap (s) or null.
+ * Why it validates like loadTrialRecord: the menu must not show a time the
+ * trial itself would reject (other layout, forged blob). Course lengths are
+ * built once — a Track is cheap but the menu asks on every click.
+ */
+function savedBest(trackId, weather) {
+  courseLengths[trackId] ??= new Track(TRACKS[trackId]).length;
+  try { return sanitizeGhost(JSON.parse(localStorage.getItem(trialKey(trackId, weather)) || 'null'), courseLengths[trackId])?.time ?? null; } catch { return null; }
 }
 
 /**
@@ -1049,6 +1063,8 @@ function pause(on) {
 function toMenu() {
   history.replaceState(null, '', location.pathname + location.search);
   startAttract();
+  // A trial just driven may have set a new record.
+  updateCourseHint();
   ui.stack = [];
   ui.show('main');
 }
@@ -1206,9 +1222,10 @@ function pickWeather(w) {
   saveSettings();
   for (const b of weatherRow.children) b.classList.toggle('on', b.dataset.weather === w);
   document.getElementById('weather-hint').textContent = WEATHER_HINTS[w];
+  // The record shown under the course is per weather.
+  updateCourseHint();
   if (G.mode === 'attract') setWeather(w);
 }
-pickWeather(settings.weather);
 
 // Course picker on the main menu; like the weather, it shows at once behind the menu.
 const TRACK_HINTS = {
@@ -1227,16 +1244,26 @@ for (const id of TRACK_IDS) {
   b.onclick = () => pickTrack(id);
   trackRow.appendChild(b);
 }
+/** Course hint plus the time-trial record for the chosen course and weather. */
+function updateCourseHint() {
+  const id = settings.track;
+  const best = savedBest(id, settings.weather);
+  const rec = best === null ? '' : ` 내 기록(${WEATHER_LABELS[settings.weather]}): ${fmtTime(best)}`;
+  document.getElementById('track-hint').textContent = `${TRACK_HINTS[id]}${rec} (온라인은 호스트 코스)`;
+}
+
 function pickTrack(id) {
   if (!TRACK_IDS.includes(id)) return;
   settings.track = id;
   saveSettings();
   for (const b of trackRow.children) b.classList.toggle('on', b.dataset.track === id);
-  document.getElementById('track-hint').textContent = `${TRACK_HINTS[id]} (온라인은 호스트 코스)`;
+  updateCourseHint();
   // The attract field is spread around the old course: restart it on the new one.
   if (G.mode === 'attract' && track.id !== id) startAttract();
 }
 pickTrack(settings.track);
+// After the course picker: its hint (and TRACK_HINTS) must exist first.
+pickWeather(settings.weather);
 document.getElementById('set-volume').oninput = (e) => { settings.volume = Number(e.target.value); audio.setVolume(settings.volume); saveSettings(); };
 document.getElementById('set-orient').onchange = (e) => setOrientation(e.target.value);
 document.getElementById('set-quality').onchange = (e) => {

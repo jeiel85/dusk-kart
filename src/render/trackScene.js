@@ -322,7 +322,7 @@ export function buildTrackScene(track, racingLine, { quality = 'high' } = {}) {
   const beam = new THREE.Mesh(new THREE.BoxGeometry(2 * bar + 2.4, 1.1, 0.5), trussMat);
   beam.position.set(0, 5.6, 0);
   gantry.add(beam);
-  const banner = new THREE.Mesh(new THREE.PlaneGeometry(2 * bar + 1.6, 0.9), new THREE.MeshBasicMaterial({ map: T.bannerTexture('LUMEN PARK  ·  DUSK KART') }));
+  const banner = new THREE.Mesh(new THREE.PlaneGeometry(2 * bar + 1.6, 0.9), new THREE.MeshBasicMaterial({ map: T.bannerTexture(`LUMEN PARK  ·  ${track.def.tag || 'DUSK KART'}`) }));
   // Faces the approaching karts (they come from local -Z).
   banner.position.set(0, 5.6, -0.26);
   banner.rotation.y = Math.PI;
