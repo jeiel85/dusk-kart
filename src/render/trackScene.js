@@ -245,59 +245,6 @@ export function buildTrackScene(track, racingLine, { quality = 'high' } = {}) {
   blocks.receiveShadow = true;
   group.add(blocks);
 
-  // Double steel guardrail (W-beam) between the tyre wall and the fence. The
-  // tyres stay the collision surface (track.barrier); the rail is the solid
-  // backstop you see above them. Two beams so the upper one clears the
-  // 0.82 m tyre stack and is visible from the helmet cam.
-  // Moderate metalness: the scene has no environment map, so a fully metallic
-  // beam would have nothing to reflect and render near-black.
-  const railMat = new THREE.MeshStandardMaterial({ color: 0xcdd3da, metalness: 0.35, roughness: 0.42, side: THREE.DoubleSide });
-  // Beam cross-section: [outward offset (m), height (m)] — the W profile
-  // bulges towards the track at the top and bottom ridges.
-  const W = [[0.06, 0], [0, 0.05], [0.05, 0.15], [0, 0.25], [0.06, 0.3]];
-  const railBase = bar + 0.78;
-  for (const side of [-1, 1]) {
-    for (const y0 of [0.62, 0.98]) {
-      const pos = [], idx = [];
-      const cols = W.length;
-      for (let k = 0; k <= n; k++) {
-        const i = track.idx(k);
-        for (const [o, y] of W) {
-          const off = side * (railBase + o);
-          pos.push(track.px[i] + track.nx[i] * off, y0 + y, track.pz[i] + track.nz[i] * off);
-        }
-        if (k < n) {
-          for (let c = 0; c < cols - 1; c++) {
-            const A = k * cols + c, B = A + 1, C = A + cols, D = C + 1;
-            idx.push(A, C, B, B, C, D);
-          }
-        }
-      }
-      const g = new THREE.BufferGeometry();
-      g.setAttribute('position', new THREE.Float32BufferAttribute(pos, 3));
-      g.setIndex(idx);
-      g.computeVertexNormals();
-      const beamMesh = new THREE.Mesh(g, railMat);
-      beamMesh.castShadow = quality === 'high';
-      beamMesh.receiveShadow = true;
-      group.add(beamMesh);
-    }
-  }
-  const railPosts = [];
-  for (const side of [-1, 1]) {
-    placeAlong(track, side * (railBase + 0.12), 2, (x, z, h) => railPosts.push([x, z, h]));
-  }
-  const postGeo = new THREE.BoxGeometry(0.15, 1.36, 0.1);
-  postGeo.translate(0, 0.68, 0);
-  const postMesh = new THREE.InstancedMesh(postGeo, new THREE.MeshStandardMaterial({ color: 0x9aa1aa, metalness: 0.3, roughness: 0.5 }), railPosts.length);
-  railPosts.forEach(([x, z, h], k) => {
-    q.setFromAxisAngle(up, h);
-    mtx.compose(new THREE.Vector3(x, 0, z), q, new THREE.Vector3(1, 1, 1));
-    postMesh.setMatrixAt(k, mtx);
-  });
-  postMesh.castShadow = quality === 'high';
-  group.add(postMesh);
-
   // Chain-link fence behind the barriers.
   const fenceTex = T.chainLinkTexture();
   fenceTex.repeat.set(1, 1);
