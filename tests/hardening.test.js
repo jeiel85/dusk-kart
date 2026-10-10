@@ -4,6 +4,7 @@ import { Track } from '../src/sim/track.js';
 import { gridSlot } from '../src/sim/race.js';
 import {
   sanitizeSnapshot, snapshotLimits, ProgressGuard, finishClaimPlausible, bestLapPlausible, minRaceTime, NO_PROGRESS, MAX_SPEED,
+  shouldAutoRejoin, REJOIN_AFTER, MAX_AUTO_REJOINS,
 } from '../src/netcheck.js';
 import { sanitizeSettings } from '../src/settings.js';
 import { ResolutionGovernor } from '../src/perf.js';
@@ -185,4 +186,14 @@ test('a real race with contact never trips the network checks', async () => {
     assert.ok(finishClaimPlausible({ time: fin, laps: 2, length: track.length, elapsed: fin + 0.2 }), `finish ${fin}`);
   }
   assert.ok(sent > 1000);
+});
+
+test('a lobby stuck alone re-enters the room a limited number of times', () => {
+  const stuck = { sinceJoin: REJOIN_AFTER, relaysOpen: 3, peers: 0, attempts: 0 };
+  assert.equal(shouldAutoRejoin(stuck), true, 'alone for long enough with relays up');
+  assert.equal(shouldAutoRejoin({ ...stuck, sinceJoin: REJOIN_AFTER - 1 }), false, 'not yet');
+  assert.equal(shouldAutoRejoin({ ...stuck, peers: 1 }), false, 'someone is here');
+  assert.equal(shouldAutoRejoin({ ...stuck, relaysOpen: 0 }), false, 'no relays: re-entering cannot help');
+  assert.equal(shouldAutoRejoin({ ...stuck, attempts: MAX_AUTO_REJOINS - 1 }), true, 'last automatic try');
+  assert.equal(shouldAutoRejoin({ ...stuck, attempts: MAX_AUTO_REJOINS }), false, 'then only the button retries');
 });
