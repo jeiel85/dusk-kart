@@ -4,7 +4,6 @@
  * first. iOS Safari and desktops refuse the lock; the player then rotates the
  * device by hand and the layout follows.
  */
-export const ORIENTATION_LABELS = { auto: '기기 방향 따라가기', landscape: '가로', portrait: '세로' };
 
 /**
  * What the HUD button asks for. While a chosen orientation is in force it

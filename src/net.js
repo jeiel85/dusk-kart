@@ -1,6 +1,7 @@
 import { joinRoom, selfId, getRelaySockets } from 'trystero';
 import { now, sanitizeSnapshot, ProgressGuard } from './netcheck.js';
 import { TRACK_IDS } from './sim/track.js';
+import { t } from './i18n.js';
 
 /**
  * Serverless multiplayer: browsers find each other through public Nostr
@@ -45,7 +46,7 @@ export class NetSession {
     this.turn = turnConfig();
     this.errors = [];
     this.room = joinRoom({ appId: APP_ID, turnConfig: this.turn }, `room-${code}`, {
-      onJoinError: (d) => this.error(`연결 실패 (${d.error || 'WebRTC'}) — 방화벽/NAT 환경일 수 있습니다.`),
+      onJoinError: (d) => this.error(t('net.joinError', { err: d.error || 'WebRTC' })),
     });
 
     const act = (name) => this.room.makeAction(name);

@@ -62,6 +62,7 @@ select option { background: #1a2238; }
 input[type=range] { padding: 0; accent-color: var(--accent); }
 input[type=checkbox] { width: 20px; height: 20px; accent-color: var(--accent); }
 .note { color: var(--dim); font-size: 13px; line-height: 1.55; }
+#invite-url { width: 100%; font-size: 13px; }
 .swatches { display: flex; gap: 8px; flex-wrap: wrap; }
 .swatches button { width: 34px; height: 34px; padding: 0; border-radius: 50%; border: 3px solid transparent; }
 .swatches button.on { border-color: #fff; }

@@ -33,9 +33,9 @@
     <div id="hud-toast"></div>
     <div id="hud-net" hidden></div>
     <div id="hud-keys" aria-live="polite"></div>
-    <button id="hud-pause" class="icon-btn" aria-label="일시정지">❚❚</button>
-    <button id="hud-cam" class="icon-btn" aria-label="카메라 전환">🎥</button>
-    <button id="hud-orient" class="icon-btn" aria-label="가로/세로 전환" hidden>🔄</button>
+    <button id="hud-pause" class="icon-btn" data-i18n-attr="aria-label:aria.pause">❚❚</button>
+    <button id="hud-cam" class="icon-btn" data-i18n-attr="aria-label:aria.cam">🎥</button>
+    <button id="hud-orient" class="icon-btn" data-i18n-attr="aria-label:aria.orient" hidden>🔄</button>
   </div>
 
   <!-- Touch controls (shown on touch devices) -->
@@ -49,148 +49,153 @@
   <div id="ui">
     <section id="scr-main" class="panel">
       <h1><span>DUSK</span> KART</h1>
-      <p class="tag">액션캠 시점 카트 레이싱 · Lumen Park</p>
+      <p class="tag" data-i18n="main.tag"></p>
       <div class="mode-box">
-        <span>조작 난이도</span>
-        <div id="mode-pick" class="seg" role="group" aria-label="조작 난이도"></div>
+        <span data-i18n="main.mode"></span>
+        <div id="mode-pick" class="seg" role="group" data-i18n-attr="aria-label:aria.mode"></div>
         <p id="mode-hint" class="note"></p>
       </div>
       <div class="mode-box">
-        <span>코스</span>
-        <div id="track-pick" class="seg" role="group" aria-label="코스"></div>
+        <span data-i18n="main.track"></span>
+        <div id="track-pick" class="seg" role="group" data-i18n-attr="aria-label:aria.track"></div>
         <p id="track-hint" class="note"></p>
       </div>
       <div class="mode-box">
-        <span>날씨</span>
-        <div id="weather-pick" class="seg" role="group" aria-label="날씨"></div>
+        <span data-i18n="main.weather"></span>
+        <div id="weather-pick" class="seg" role="group" data-i18n-attr="aria-label:aria.weather"></div>
         <p id="weather-hint" class="note"></p>
       </div>
       <div class="menu">
-        <button data-go="race">퀵 레이스 <small>AI 5대와 3랩 레이스</small></button>
-        <button data-go="trial">타임 트라이얼 <small>혼자 달리며 베스트 랩 + 고스트</small></button>
-        <button data-go="online">온라인 대전 <small>서버 없이 P2P로 친구와 레이스</small></button>
+        <button data-go="race" data-i18n-html="main.race"></button>
+        <button data-go="trial" data-i18n-html="main.trial"></button>
+        <button data-go="online" data-i18n-html="main.online"></button>
         <div class="menu-row">
-          <button data-go="settings" class="ghost">설정</button>
-          <button data-go="help" class="ghost">조작법</button>
+          <button data-go="settings" class="ghost" data-i18n="main.settings"></button>
+          <button data-go="help" class="ghost" data-i18n="main.help"></button>
+          <button id="btn-lang" class="ghost" data-i18n="main.lang"></button>
         </div>
       </div>
     </section>
 
     <section id="scr-online" class="panel" hidden>
-      <h2>온라인 대전</h2>
-      <label>닉네임 <input id="in-name" maxlength="14" autocomplete="off" /></label>
-      <label>카트 색상 <span id="colors" class="swatches"></span></label>
-      <label>방 코드 <input id="in-room" maxlength="5" autocomplete="off" placeholder="비워두면 새 방 생성" style="text-transform:uppercase" /></label>
-      <p class="note">같은 방 코드를 입력한 사람끼리 브라우저 간 직접(WebRTC) 연결됩니다. 매칭은 공개 Nostr 릴레이를 사용하며 게임 서버는 없습니다.</p>
+      <h2 data-i18n="online.title"></h2>
+      <label><span data-i18n="online.name"></span> <input id="in-name" maxlength="14" autocomplete="off" /></label>
+      <label><span data-i18n="online.color"></span> <span id="colors" class="swatches"></span></label>
+      <label><span data-i18n="online.room"></span> <input id="in-room" maxlength="5" autocomplete="off" data-i18n-attr="placeholder:online.roomPlaceholder" style="text-transform:uppercase" /></label>
+      <p class="note" data-i18n="online.note"></p>
       <p class="note warn" id="online-error" role="alert" hidden></p>
       <div class="menu-row">
-        <button id="btn-join">입장</button>
-        <button data-go="main" class="ghost">뒤로</button>
+        <button id="btn-join" data-i18n="online.join"></button>
+        <button data-go="main" class="ghost" data-i18n="back"></button>
       </div>
     </section>
 
     <section id="scr-lobby" class="panel" hidden>
-      <h2>로비 <code id="lobby-code"></code></h2>
-      <p class="note" id="lobby-status">연결 중…</p>
+      <h2><span data-i18n="lobby.title"></span> <code id="lobby-code"></code></h2>
+      <p class="note" id="lobby-status" data-i18n="lobby.connecting"></p>
       <ul id="lobby-list"></ul>
       <div class="menu-row">
-        <button id="btn-copy" class="ghost">초대 링크 복사</button>
-        <button id="btn-start">레이스 시작</button>
+        <button id="btn-copy" class="ghost" data-i18n="lobby.copy"></button>
+        <button id="btn-start" data-i18n="lobby.start"></button>
+      </div>
+      <div id="invite-box" hidden>
+        <p class="note warn" data-i18n="lobby.copyManual"></p>
+        <input id="invite-url" readonly />
       </div>
       <div class="menu-row">
-        <button id="btn-freeroam" class="ghost">자유 주행하며 대기</button>
-        <button id="btn-leave" class="ghost">나가기</button>
+        <button id="btn-freeroam" class="ghost" data-i18n="lobby.freeroam"></button>
+        <button id="btn-leave" class="ghost" data-i18n="lobby.leave"></button>
       </div>
       <div class="menu-row">
-        <button id="btn-rejoin" class="ghost" title="상대가 같은 방에 있는데 보이지 않을 때">다시 연결</button>
+        <button id="btn-rejoin" class="ghost" data-i18n="lobby.rejoin" data-i18n-attr="title:lobby.rejoinTitle"></button>
       </div>
       <details id="net-diag">
-        <summary>연결 상태</summary>
+        <summary data-i18n="lobby.diag"></summary>
         <div id="net-diag-body"></div>
       </details>
     </section>
 
     <section id="scr-settings" class="panel" hidden>
-      <h2>설정</h2>
-      <label>기본 카메라
+      <h2 data-i18n="set.title"></h2>
+      <label><span data-i18n="set.camera"></span>
         <select id="set-camera">
-          <option value="helmet">헬멧 액션캠 (1인칭)</option>
-          <option value="chase">3인칭 체이스</option>
-          <option value="far">3인칭 원거리</option>
+          <option value="helmet" data-i18n="cam.helmetFull"></option>
+          <option value="chase" data-i18n="cam.chase"></option>
+          <option value="far" data-i18n="cam.far"></option>
         </select>
       </label>
-      <label>모션 블러 <input id="set-blur" type="range" min="0" max="1.5" step="0.1" /></label>
-      <label>카메라 흔들림 (0 = 끔) <input id="set-shake" type="range" min="0" max="1.5" step="0.1" /></label>
-      <label class="check"><input id="set-lens" type="checkbox" /> 액션캠 광각 렌즈 왜곡</label>
-      <label>조작 난이도
+      <label><span data-i18n="set.blur"></span> <input id="set-blur" type="range" min="0" max="1.5" step="0.1" /></label>
+      <label><span data-i18n="set.shake"></span> <input id="set-shake" type="range" min="0" max="1.5" step="0.1" /></label>
+      <label class="check"><input id="set-lens" type="checkbox" /> <span data-i18n="set.lens"></span></label>
+      <label><span data-i18n="set.mode"></span>
         <select id="set-mode">
-          <option value="easy">쉬움 — 조향·감속·벽 회피 보조</option>
-          <option value="normal">보통 — 조향 한계·스핀 방지</option>
-          <option value="real">리얼 — 보조 없음</option>
+          <option value="easy" data-i18n="set.mode.easy"></option>
+          <option value="normal" data-i18n="set.mode.normal"></option>
+          <option value="real" data-i18n="set.mode.real"></option>
         </select>
       </label>
-      <label>음량 <input id="set-volume" type="range" min="0" max="1" step="0.05" /></label>
-      <label>그래픽 품질
+      <label><span data-i18n="set.volume"></span> <input id="set-volume" type="range" min="0" max="1" step="0.05" /></label>
+      <label><span data-i18n="set.quality"></span>
         <select id="set-quality">
-          <option value="auto">자동</option>
-          <option value="high">높음</option>
-          <option value="medium">보통</option>
-          <option value="low">낮음 (저사양/모바일)</option>
+          <option value="auto" data-i18n="set.quality.auto"></option>
+          <option value="high" data-i18n="quality.high"></option>
+          <option value="medium" data-i18n="quality.medium"></option>
+          <option value="low" data-i18n="set.quality.lowFull"></option>
         </select>
       </label>
-      <label class="touch-only">화면 방향 (휴대폰)
+      <label class="touch-only"><span data-i18n="set.orient"></span>
         <select id="set-orient">
-          <option value="auto">기기 방향 따라가기</option>
-          <option value="landscape">가로 고정</option>
-          <option value="portrait">세로 고정</option>
+          <option value="auto" data-i18n="orient.auto"></option>
+          <option value="landscape" data-i18n="set.orient.landscape"></option>
+          <option value="portrait" data-i18n="set.orient.portrait"></option>
         </select>
       </label>
-      <p class="note">그래픽 품질 변경은 페이지를 다시 불러와 적용합니다. <b>자동</b>은 레이스 중 프레임을 보고 다음 실행의 품질을 한 단계씩 올리거나 내립니다.<span class="touch-only"> 화면 방향 고정은 전체 화면에서 동작합니다(안드로이드 Chrome). 주행 중 🔄 버튼으로도 바꿀 수 있습니다.</span></p>
-      <div class="menu-row"><button data-back>확인</button></div>
+      <p class="note" data-i18n-html="set.note"></p>
+      <div class="menu-row"><button data-back data-i18n="ok"></button></div>
     </section>
 
     <section id="scr-help" class="panel" hidden>
-      <h2>조작법</h2>
+      <h2 data-i18n="help.title"></h2>
       <table class="keys">
-        <tr><td>가속</td><td><kbd>W</kbd> / <kbd>↑</kbd> · 패드 RT</td></tr>
-        <tr><td>브레이크 (후륜 전용)</td><td><kbd>S</kbd> / <kbd>↓</kbd> / <kbd>Space</kbd> · 패드 LT</td></tr>
-        <tr><td>조향</td><td><kbd>A</kbd><kbd>D</kbd> / <kbd>←</kbd><kbd>→</kbd> · 왼쪽 스틱</td></tr>
-        <tr><td>카메라 전환</td><td><kbd>C</kbd> · 패드 Y</td></tr>
-        <tr><td>트랙 복귀</td><td><kbd>R</kbd> · 패드 Back</td></tr>
-        <tr><td>일시정지</td><td><kbd>Esc</kbd> / <kbd>P</kbd> · 패드 Start</td></tr>
-        <tr><td>음소거</td><td><kbd>M</kbd></td></tr>
-        <tr><td>주행 중 키 안내 표시/숨기기</td><td><kbd>H</kbd> / <kbd>F1</kbd></td></tr>
-        <tr><td>터치</td><td>화면 왼쪽을 좌우로 드래그해 조향 · 오른쪽 <b>GAS</b>/<b>BRAKE</b></td></tr>
+        <tr><td data-i18n="help.gas"></td><td><kbd>W</kbd> / <kbd>↑</kbd> · <span data-i18n="help.padRT"></span></td></tr>
+        <tr><td data-i18n="help.brake"></td><td><kbd>S</kbd> / <kbd>↓</kbd> / <kbd>Space</kbd> · <span data-i18n="help.padLT"></span></td></tr>
+        <tr><td data-i18n="help.steer"></td><td><kbd>A</kbd><kbd>D</kbd> / <kbd>←</kbd><kbd>→</kbd> · <span data-i18n="help.stick"></span></td></tr>
+        <tr><td data-i18n="help.cam"></td><td><kbd>C</kbd> · <span data-i18n="help.padY"></span></td></tr>
+        <tr><td data-i18n="help.reset"></td><td><kbd>R</kbd> · <span data-i18n="help.padBack"></span></td></tr>
+        <tr><td data-i18n="help.pause"></td><td><kbd>Esc</kbd> / <kbd>P</kbd> · <span data-i18n="help.padStart"></span></td></tr>
+        <tr><td data-i18n="help.mute"></td><td><kbd>M</kbd></td></tr>
+        <tr><td data-i18n="help.keys"></td><td><kbd>H</kbd> / <kbd>F1</kbd></td></tr>
+        <tr><td data-i18n="help.touch"></td><td data-i18n-html="help.touchHow"></td></tr>
       </table>
-      <p class="note">어렵다면 메인 메뉴에서 조작 난이도를 <b>쉬움</b>으로 두세요 — 가속만 누르고 있어도 코너 앞에서 알아서 감속하고 라인을 따라가도록 도와줍니다. 정지 상태에서 브레이크를 길게 누르면 천천히 후진합니다. <b>리얼</b>에서는 렌탈 카트처럼 뒷바퀴에만 브레이크가 있어 코너 안에서 세게 밟으면 뒤가 미끄러지고, 솔리드 액슬이라 저속에서 조향을 과하게 꺾으면 끌리듯 느려집니다.</p>
-      <div class="menu-row"><button data-back>확인</button></div>
+      <p class="note" data-i18n-html="help.note"></p>
+      <div class="menu-row"><button data-back data-i18n="ok"></button></div>
     </section>
 
     <section id="scr-pause" class="panel" hidden>
-      <h2>일시정지</h2>
+      <h2 data-i18n="pause.title"></h2>
       <div class="menu">
-        <button id="btn-resume">계속하기</button>
-        <button id="btn-restart" class="ghost">다시 시작</button>
-        <button data-go="help" class="ghost">조작법</button>
-        <button data-go="settings" class="ghost">설정</button>
-        <button id="btn-quit" class="ghost">메인 메뉴</button>
+        <button id="btn-resume" data-i18n="pause.resume"></button>
+        <button id="btn-restart" class="ghost" data-i18n="pause.restart"></button>
+        <button data-go="help" class="ghost" data-i18n="main.help"></button>
+        <button data-go="settings" class="ghost" data-i18n="main.settings"></button>
+        <button id="btn-quit" class="ghost" data-i18n="menu"></button>
       </div>
     </section>
 
     <section id="scr-results" class="panel" hidden>
-      <h2 id="res-title">결과</h2>
+      <h2 id="res-title" data-i18n="res.title"></h2>
       <table id="res-table"></table>
       <div class="menu-row">
-        <button id="btn-again">다시 하기</button>
-        <button id="btn-menu" class="ghost">메인 메뉴</button>
+        <button id="btn-again" data-i18n="res.again"></button>
+        <button id="btn-menu" class="ghost" data-i18n="menu"></button>
       </div>
     </section>
   </div>
 
-  <div id="boot">트랙 준비 중…</div>
+  <div id="boot" data-i18n="boot">…</div>
   <div id="gl-lost" hidden>
-    <p>그래픽 연결이 끊겼습니다 — 복구를 기다리는 중…</p>
-    <button type="button" hidden>새로고침</button>
+    <p data-i18n="gl.lost"></p>
+    <button type="button" data-i18n="gl.reload" hidden></button>
   </div>
   <script type="module" src="/src/main.js"></script>
 </body>

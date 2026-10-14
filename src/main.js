@@ -1,14 +1,14 @@
 import * as THREE from 'three';
 import './style.css';
-import { Track, computeRacingLine, applyWeather, WEATHERS, WEATHER_LABELS, TRACKS, TRACK_IDS, TRACK_LABELS } from './sim/track.js';
+import { Track, computeRacingLine, applyWeather, WEATHERS, TRACKS, TRACK_IDS } from './sim/track.js';
 import { Kart, KART_SPEC, collideKarts } from './sim/kart.js';
 import { AIDriver } from './sim/ai.js';
 import { RaceTracker, gridSlot } from './sim/race.js';
-import { DriveAssist, DRIVE_MODES, DRIVE_MODE_LABELS, PHYSICS_ASSISTS } from './sim/assist.js';
+import { DriveAssist, DRIVE_MODES, PHYSICS_ASSISTS } from './sim/assist.js';
 import { clamp, mulberry32 } from './sim/math.js';
 import { buildTrackScene, buildSky } from './render/trackScene.js';
 import { KartModel } from './render/kartModel.js';
-import { CameraRig, CAMERA_MODES, CAMERA_LABELS, noise1 } from './render/cameraRig.js';
+import { CameraRig, CAMERA_MODES, noise1 } from './render/cameraRig.js';
 import { PostFX } from './render/postfx.js';
 import { Rain, WeatherLook } from './render/weather.js';
 import { SkidMarks } from './render/skidmarks.js';
@@ -19,8 +19,11 @@ import { Hud, fmtTime, escapeHtml } from './hud.js';
 import { randomRoomCode, now, snapshotLimits, finishClaimPlausible, bestLapPlausible, NO_PROGRESS, shouldAutoRejoin, ROOM_REJOIN_GAP } from './netcheck.js';
 import { GHOST_DT, GHOST_KEY, encodeGhost, sanitizeGhost } from './ghost.js';
 import { sanitizeSettings, QUALITIES } from './settings.js';
-import { applyOrientation, buttonTarget, ORIENTATION_LABELS } from './orientation.js';
+import { applyOrientation, buttonTarget } from './orientation.js';
 import { ResolutionGovernor, QualityTuner, QUALITY_STEPS } from './perf.js';
+import { t, applyStatic, getLang, saveLang } from './i18n.js';
+
+applyStatic();
 
 const STEP = 1 / 240;
 const RACE_LAPS = 3;
@@ -54,7 +57,7 @@ let renderer;
 try {
   renderer = new THREE.WebGLRenderer({ canvas, antialias: false, powerPreference: 'high-performance' });
 } catch (err) {
-  document.getElementById('boot').textContent = '이 브라우저/기기에서 WebGL을 사용할 수 없어 게임을 실행할 수 없습니다.';
+  document.getElementById('boot').textContent = t('boot.nowebgl');
   throw err;
 }
 renderer.toneMapping = THREE.ACESFilmicToneMapping;
@@ -185,7 +188,7 @@ class Entity {
     });
     if (this.tag) {
       this.tag.material.map.dispose();
-      this.tag.material.map = nameTagTexture(on ? `관전 · ${this.name}` : this.name, this.color);
+      this.tag.material.map = nameTagTexture(on ? t('tag.spectator', { name: this.name }) : this.name, this.color);
       this.tag.material.opacity = on ? 0.6 : 1;
     }
   }
@@ -396,7 +399,7 @@ function startLocal(mode) {
   startCountdown(G.simTime + (mode === 'trial' ? 5.5 : 6.4));
   if (mode === 'trial') G.lightsStart = G.goTime - 5.2;
   enterDriving();
-  hud.info(`${TRACK_LABELS[track.id]} 코스 · ${WEATHER_LABELS[G.weather]}`, 2500);
+  hud.info(t('info.course', { track: t(`track.${track.id}`), weather: t(`weather.${G.weather}`) }), 2500);
 }
 
 function startAttract() {
@@ -639,13 +642,13 @@ function showResults() {
   const rows = raceRows();
   const leader = rows.find((r) => r.finished);
   const tbl = document.getElementById('res-table');
-  tbl.innerHTML = '<tr><th>#</th><th>드라이버</th><th class="t">기록</th><th class="t">베스트 랩</th></tr>' + rows.map((r, i) => {
-    const time = r.finished ? (i === 0 || !leader ? fmtTime(r.time) : `+${(r.time - leader.time).toFixed(3)}`) : '주행 중';
+  tbl.innerHTML = `<tr><th>#</th><th>${t('res.driver')}</th><th class="t">${t('res.time')}</th><th class="t">${t('res.best')}</th></tr>` + rows.map((r, i) => {
+    const time = r.finished ? (i === 0 || !leader ? fmtTime(r.time) : `+${(r.time - leader.time).toFixed(3)}`) : t('res.running');
     return `<tr class="${r.me ? 'me' : ''}"><td>${i + 1}</td><td>${escapeHtml(r.name)}</td><td class="t">${time}</td><td class="t">${fmtTime(r.best)}</td></tr>`;
   }).join('');
   const me = rows.findIndex((r) => r.me) + 1;
-  document.getElementById('res-title').textContent = me ? `결과 — P${me}` : '결과';
-  document.getElementById('btn-again').textContent = G.mode === 'online' ? '로비로' : '다시 하기';
+  document.getElementById('res-title').textContent = me ? t('res.titlePos', { p: me }) : t('res.title');
+  document.getElementById('btn-again').textContent = t(G.mode === 'online' ? 'res.toLobby' : 'res.again');
   document.getElementById('btn-again').disabled = false;
   ui.show('results');
 }
@@ -684,19 +687,19 @@ async function joinOnline(code, { rejoin = false } = {}) {
   const errBox = document.getElementById('online-error');
   errBox.hidden = true;
   btn.disabled = true;
-  btn.textContent = '불러오는 중…';
+  btn.textContent = t('online.loading');
   let NetSession;
   try {
     ({ NetSession } = await import('./net.js'));
   } catch (err) {
     console.error(err);
     // The HUD is hidden behind the menus, so report it on the form itself.
-    errBox.textContent = '온라인 모듈을 불러오지 못했습니다 — 네트워크 연결을 확인한 뒤 다시 입장해 보세요.';
+    errBox.textContent = t('online.loadFailed');
     errBox.hidden = false;
     return;
   } finally {
     btn.disabled = false;
-    btn.textContent = '입장';
+    btn.textContent = t('online.join');
   }
   // Abandoned while loading: another mode started, or the player left the
   // form. A re-entry starts in the lobby panel or in free roam behind it.
@@ -730,8 +733,8 @@ async function joinOnline(code, { rejoin = false } = {}) {
       const e = G.entities.find((x) => x.id === id);
       if (e) { e.dispose(); G.entities.splice(G.entities.indexOf(e), 1); }
       G.pendingFin.delete(id);
-      if (wasHost && G.net) hud.info(G.net.isHost ? '호스트가 나갔습니다 — 이제 내가 호스트입니다' : '호스트가 나갔습니다 — 새 호스트로 이어갑니다', 3500);
-      else hud.info('드라이버가 나갔습니다');
+      if (wasHost && G.net) hud.info(t(G.net.isHost ? 'info.hostLeftMe' : 'info.hostLeft'), 3500);
+      else hud.info(t('info.driverLeft'));
       if (!abandonEmptyRace()) refreshLobby();
     },
     onRace: (m, from) => handleRaceMsg(m, from),
@@ -746,6 +749,8 @@ async function joinOnline(code, { rejoin = false } = {}) {
   document.getElementById('lobby-code').textContent = code;
   G.diagOpened = false;
   document.getElementById('net-diag').open = false;
+  // Same room code after a re-entry: a link shown for manual copying still holds.
+  if (!rejoin) document.getElementById('invite-box').hidden = true;
   renderNetDiag();
   history.replaceState(null, '', `#room=${code}`);
   refreshLobby();
@@ -781,12 +786,12 @@ function handleRaceMsg(m, from) {
     startCountdown(G.simTime + (startWall - now()) / 1000, startWall);
     skid.clear();
     enterDriving();
-    const wx = ` · ${TRACK_LABELS[track.id]} 코스${G.weather === 'dry' ? '' : ` · ${WEATHER_LABELS[G.weather]}`}`;
-    hud.info(mySlot >= 0 ? `그리드 ${mySlot + 1}번에서 출발합니다${wx}` : `관전 중 — 다음 레이스에 참가할 수 있어요${wx}`, 2500);
+    const wx = t('info.wx', { track: t(`track.${track.id}`), weather: G.weather === 'dry' ? '' : ` · ${t(`weather.${G.weather}`)}` });
+    hud.info(mySlot >= 0 ? t('info.grid', { n: mySlot + 1, wx }) : t('info.spectate', { wx }), 2500);
   } else if (m.type === 'lobby') {
     backToLobby();
   } else if (m.type === 'busy') {
-    hud.info('레이스 진행 중 — 끝나면 다음 레이스에 참가합니다', 3500);
+    hud.info(t('info.raceRunning'), 3500);
   }
 }
 
@@ -811,7 +816,7 @@ function hostStart() {
   // Not a hard block: a driver who went idle mid-race would never finish.
   if (raceRunningElsewhere() && !(G.confirmStartUntil > now())) {
     G.confirmStartUntil = now() + 4000;
-    hud.info('아직 레이스 중인 드라이버가 있습니다 — 한 번 더 누르면 새 레이스를 시작합니다', 4000);
+    hud.info(t('info.confirmStart'), 4000);
     return;
   }
   G.confirmStartUntil = 0;
@@ -862,7 +867,7 @@ function abandonEmptyRace() {
   const net = G.net;
   if (!net || G.phase === 'free' || !G.raceId) return false;
   if (G.grid.some((id) => id === net.selfId || net.peers.has(id))) return false;
-  hud.info('레이스 참가자가 모두 나가 로비로 돌아갑니다', 3500);
+  hud.info(t('info.allLeft'), 3500);
   backToLobby();
   return true;
 }
@@ -897,7 +902,7 @@ function syncRoomTrack() {
   if (!want || !setTrack(want)) return;
   if (G.player) place(G.player, Math.floor(Math.random() * 6));
   rig.snap = true;
-  hud.info(`코스: ${TRACK_LABELS[track.id]} 코스${net.isHost ? '' : ' (호스트 선택)'}`, 2500);
+  hud.info(t('info.courseHost', { track: t(`track.${track.id}`) }) + (net.isHost ? '' : t('info.hostPick')), 2500);
 }
 
 function refreshLobby() {
@@ -910,44 +915,43 @@ function refreshLobby() {
     const me = id === net.selfId;
     const p = me ? profile() : net.peers.get(id)?.profile;
     if (!p) return '';
-    const rtt = me ? '나' : `${Math.round(net.peers.get(id).rtt || 0)} ms`;
-    return `<li><i style="background:${p.color}"></i>${escapeHtml(p.name)}${id === net.hostId ? ' <small>👑 호스트</small>' : ''}<em>${rtt}</em></li>`;
+    const rtt = me ? t('lobby.me') : `${Math.round(net.peers.get(id).rtt || 0)} ms`;
+    return `<li><i style="background:${p.color}"></i>${escapeHtml(p.name)}${id === net.hostId ? ` <small>${t('lobby.host')}</small>` : ''}<em>${rtt}</em></li>`;
   }).join('');
   const n = members.length;
   document.getElementById('lobby-status').textContent = n > 1
-    ? `${n}명 접속 중. ${net.isHost ? '준비되면 레이스를 시작하세요.' : '호스트가 레이스를 시작하면 자동으로 그리드에 섭니다.'}`
-    : '다른 드라이버를 기다리는 중… 초대 링크를 보내보세요. (혼자서도 시작할 수 있어요)';
+    ? t('lobby.count', { n }) + t(net.isHost ? 'lobby.hostReady' : 'lobby.guestReady')
+    : t('lobby.alone');
   const start = document.getElementById('btn-start');
   start.disabled = !net.isHost;
-  start.textContent = !net.isHost ? '호스트 대기 중' : raceRunningElsewhere() ? '레이스 시작 (진행 중인 레이스 있음)' : '레이스 시작';
-  hud.netStatus(`ONLINE · ${escapeHtml(net.code)} · ${n}명`);
+  start.textContent = t(!net.isHost ? 'lobby.waitHost' : raceRunningElsewhere() ? 'lobby.startBusy' : 'lobby.start');
+  hud.netStatus(t('lobby.netStatus', { code: escapeHtml(net.code), n }));
 }
 
-const PEER_STATE = { new: '준비', connecting: '연결 중', connected: '연결됨', disconnected: '끊김', failed: '실패', closed: '종료', unknown: '확인 중' };
-
-/** Lobby "연결 상태" panel: relays, TURN, per-peer link and recent errors. */
+const PEER_STATES = ['new', 'connecting', 'connected', 'disconnected', 'failed', 'closed', 'unknown'];
+/** Lobby connection-status panel: relays, TURN, per-peer link and recent errors. */
 function renderNetDiag() {
   const net = G.net;
   if (!net) return;
   const d = net.diagnostics();
   const rows = [
-    ['시그널링 릴레이', d.relaysTotal ? `${d.relaysOpen}/${d.relaysTotal} 연결` : '연결 시도 중'],
-    ['TURN 중계', d.turn ? '설정됨' : '미설정 (직접 연결만 가능)'],
+    [t('diag.relay'), d.relaysTotal ? t('diag.relayCount', { open: d.relaysOpen, total: d.relaysTotal }) : t('diag.relayTrying')],
+    [t('diag.turn'), t(d.turn ? 'diag.turnOn' : 'diag.turnOff')],
     ...d.peers.map((p) => [
       escapeHtml(p.name ?? `${p.id.slice(0, 6)}…`),
       [
-        PEER_STATE[p.state] ?? escapeHtml(p.state),
+        PEER_STATES.includes(p.state) ? t(`peer.${p.state}`) : escapeHtml(p.state),
         p.rtt ? `${Math.round(p.rtt)} ms` : null,
-        p.lastSeen === null ? '위치 수신 전' : p.lastSeen > 2 ? `${p.lastSeen.toFixed(0)}초째 수신 없음` : null,
-        p.rejected ? `거부된 패킷 ${p.rejected}` : null,
+        p.lastSeen === null ? t('diag.noPos') : p.lastSeen > 2 ? t('diag.silent', { s: p.lastSeen.toFixed(0) }) : null,
+        p.rejected ? t('diag.rejected', { n: p.rejected }) : null,
       ].filter(Boolean).join(' · '),
     ]),
-    ...d.errors.map((e) => ['오류', `${escapeHtml(e.msg)} (${e.ago.toFixed(0)}초 전)`]),
+    ...d.errors.map((e) => [t('diag.error'), `${escapeHtml(e.msg)} (${t('diag.ago', { s: e.ago.toFixed(0) })})`]),
   ];
   const warns = [];
-  if (d.sinceJoin > 8 && d.relaysOpen === 0) warns.push('시그널링 릴레이(Nostr)에 연결하지 못했습니다. 네트워크나 광고/추적 차단 확장이 wss:// 연결을 막고 있는지 확인하세요.');
-  if (d.peers.some((p) => p.state === 'failed')) warns.push('상대와 직접 연결(WebRTC)이 실패했습니다. 회사·학교망이나 모바일 데이터처럼 엄격한 NAT에서는 TURN 중계 서버가 필요할 수 있습니다.');
-  else if (d.sinceJoin > 20 && d.relaysOpen > 0 && d.peers.length === 0) warns.push('아직 아무도 보이지 않습니다. 상대가 같은 방 코드로 들어왔는데도 계속 혼자라면 방화벽/NAT 때문에 연결이 막혔을 수 있습니다.');
+  if (d.sinceJoin > 8 && d.relaysOpen === 0) warns.push(t('diag.warnRelay'));
+  if (d.peers.some((p) => p.state === 'failed')) warns.push(t('diag.warnFailed'));
+  else if (d.sinceJoin > 20 && d.relaysOpen > 0 && d.peers.length === 0) warns.push(t('diag.warnAlone'));
   document.getElementById('net-diag-body').innerHTML =
     `<dl>${rows.map(([k, v]) => `<dt>${k}</dt><dd>${v}</dd>`).join('')}</dl>` +
     warns.map((w) => `<p class="warn">${w}</p>`).join('');
@@ -968,10 +972,10 @@ function rejoinRoom(auto) {
   if (!code || G.phase !== 'free' || G.rejoining) return;
   if (auto) G.rejoins = (G.rejoins || 0) + 1;
   G.rejoining = true;
-  hud.info(auto ? '아무도 보이지 않아 방에 다시 연결합니다…' : '방에 다시 연결합니다…', 3000);
+  hud.info(t(auto ? 'info.rejoinAuto' : 'info.rejoin'), 3000);
   joinOnline(code, { rejoin: true }).catch((err) => {
     console.error(err);
-    hud.info('다시 연결하지 못했습니다', 4000);
+    hud.info(t('info.rejoinFailed'), 4000);
   }).finally(() => { G.rejoining = false; });
 }
 
@@ -1117,7 +1121,7 @@ document.getElementById('hud-orient').hidden = !isTouch;
 document.getElementById('hud-orient').onclick = () => setOrientation(
   buttonTarget(settings.orientation, !!document.fullscreenElement, matchMedia('(orientation: portrait)').matches));
 
-const RELOCK_HINT = '화면 방향 고정이 풀렸습니다 — 🔄 버튼으로 다시 고정하세요';
+const RELOCK_HINT = t('info.relock');
 /**
  * Re-take the chosen orientation when driving starts: leaving fullscreen (back
  * gesture) drops the lock. Fullscreen needs a user gesture, and online races
@@ -1140,7 +1144,7 @@ async function setOrientation(target) {
     saveSettings();
   }
   document.getElementById('set-orient').value = settings.orientation;
-  hud.info(ok ? `화면 방향: ${ORIENTATION_LABELS[target]}` : '이 브라우저는 화면 방향 고정을 지원하지 않습니다 — 기기를 직접 돌려 주세요', ok ? 1400 : 3500);
+  hud.info(ok ? t('info.orient', { o: t(`orient.${target}`) }) : t('info.orientNo'), ok ? 1400 : 3500);
 }
 
 // Online form.
@@ -1168,16 +1172,43 @@ document.getElementById('btn-join').onclick = () => {
   audio.start();
   joinOnline(code).catch((err) => {
     console.error(err);
-    hud.info('온라인 연결을 시작하지 못했습니다', 4000);
+    hud.info(t('online.startFailed'), 4000);
   });
+};
+document.getElementById('btn-lang').onclick = () => {
+  saveLang(getLang() === 'ko' ? 'en' : 'ko');
+  // A ?lang= in the URL would override the saved choice on reload.
+  if (!params.has('lang')) { location.reload(); return; }
+  const url = new URL(location.href);
+  url.searchParams.delete('lang');
+  location.replace(url);
 };
 document.getElementById('btn-start').onclick = () => hostStart();
 document.getElementById('btn-freeroam').onclick = () => { enterDriving(); hud.showKeys(true, 8000); };
 document.getElementById('btn-leave').onclick = toMenu;
 document.getElementById('btn-rejoin').onclick = () => rejoinRoom(false);
+// Portals such as itch.io run the game in an iframe on their own file host,
+// whose URL is not a page anyone can open, and they do not pass a #room hash
+// into the frame. Invites from there point at the public web build instead;
+// both join the same rooms (same app id and relays).
+const PUBLIC_URL = 'https://jeiel85.github.io/dusk-kart/';
+const embedded = (() => { try { return window.top !== window.self; } catch { return true; } })();
+const inviteUrl = (code) => `${embedded ? PUBLIC_URL : location.origin + location.pathname}#room=${code}`;
 document.getElementById('btn-copy').onclick = async () => {
-  const url = `${location.origin}${location.pathname}#room=${G.net?.code}`;
-  try { await navigator.clipboard.writeText(url); hud.info('초대 링크를 복사했습니다'); } catch { prompt('초대 링크', url); }
+  const url = inviteUrl(G.net?.code);
+  const box = document.getElementById('invite-box');
+  try {
+    await navigator.clipboard.writeText(url);
+    box.hidden = true;
+    hud.info(t(embedded ? 'lobby.copiedWeb' : 'lobby.copied'));
+  } catch {
+    // Clipboard access is often denied inside an embedding iframe: show the link to copy by hand.
+    const field = document.getElementById('invite-url');
+    field.value = url;
+    box.hidden = false;
+    field.focus();
+    field.select();
+  }
 };
 
 // Settings form.
@@ -1189,7 +1220,7 @@ function fillSettings() {
   document.getElementById('set-mode').value = settings.driveMode;
   document.getElementById('set-volume').value = settings.volume;
   const auto = document.querySelector('#set-quality option[value=auto]');
-  auto.textContent = `자동 — 지금: ${QUALITY_LABELS[settings.quality]}`;
+  auto.textContent = t('set.quality.autoNow', { q: t(`quality.${settings.quality}`) });
   document.getElementById('set-quality').value = settings.qualityAuto ? 'auto' : settings.quality;
   document.getElementById('set-orient').value = settings.orientation;
 }
@@ -1200,17 +1231,12 @@ document.getElementById('set-lens').onchange = (e) => { settings.lensDistortion 
 document.getElementById('set-mode').onchange = (e) => setDriveMode(e.target.value);
 
 // Control mode picker on the main menu.
-const MODE_HINTS = {
-  easy: '처음이라면 추천 — 라인을 따라 조향을 돕고, 코너 앞에서 자동 감속하며, 벽에 가까워지면 밀어냅니다. 익숙해지면 보통으로!',
-  normal: '조향 한계·스핀 방지만 켜진 상태. 속도 조절과 라인은 직접.',
-  real: '보조 없음. 후륜 잠김, 솔리드 액슬 끌림 등 카트 특성을 그대로.',
-};
 const modeRow = document.getElementById('mode-pick');
 for (const m of DRIVE_MODES) {
   const b = document.createElement('button');
   b.type = 'button';
   b.dataset.mode = m;
-  b.textContent = DRIVE_MODE_LABELS[m];
+  b.textContent = t(`drive.${m}`);
   b.onclick = () => setDriveMode(m);
   modeRow.appendChild(b);
 }
@@ -1219,23 +1245,19 @@ function setDriveMode(m) {
   settings.driveMode = m;
   saveSettings();
   for (const b of modeRow.children) b.classList.toggle('on', b.dataset.mode === m);
-  document.getElementById('mode-hint').textContent = MODE_HINTS[m];
+  document.getElementById('mode-hint').textContent = t(`hint.${m}`);
   document.getElementById('set-mode').value = m;
 }
 setDriveMode(settings.driveMode);
 
 // Weather picker on the main menu. The menu runs over the attract loop, so
 // the change shows (and sounds) straight away.
-const WEATHER_HINTS = {
-  dry: '마른 노면, 기본 그립.',
-  rain: '그립↓ 제동 거리↑ · 젖은 연석은 특히 미끄러워요 (온라인은 호스트 날씨).',
-};
 const weatherRow = document.getElementById('weather-pick');
 for (const w of WEATHERS) {
   const b = document.createElement('button');
   b.type = 'button';
   b.dataset.weather = w;
-  b.textContent = WEATHER_LABELS[w];
+  b.textContent = t(`weather.${w}`);
   b.onclick = () => pickWeather(w);
   weatherRow.appendChild(b);
 }
@@ -1244,26 +1266,19 @@ function pickWeather(w) {
   settings.weather = w;
   saveSettings();
   for (const b of weatherRow.children) b.classList.toggle('on', b.dataset.weather === w);
-  document.getElementById('weather-hint').textContent = WEATHER_HINTS[w];
+  document.getElementById('weather-hint').textContent = t(`hint.${w}`);
   // The record shown under the course is per weather.
   updateCourseHint();
   if (G.mode === 'attract') setWeather(w);
 }
 
 // Course picker on the main menu; like the weather, it shows at once behind the menu.
-const TRACK_HINTS = {
-  lumen: '864 m · 촘촘한 인필드 코너가 이어지는 기본 코스.',
-  sprint: '471 m · 짧고 빠른 한 바퀴, 무리가 붙어 다니는 코스.',
-  tech: '786 m · S자와 방향 전환이 이어지는 가장 까다로운 코스.',
-  gp: '1.03 km · 공원 북쪽·서쪽을 크게 도는 빠른 코스.',
-  endurance: '1.15 km · 공원 바깥을 크게 도는 가장 긴 고속 코스.',
-};
 const trackRow = document.getElementById('track-pick');
 for (const id of TRACK_IDS) {
   const b = document.createElement('button');
   b.type = 'button';
   b.dataset.track = id;
-  b.textContent = TRACK_LABELS[id];
+  b.textContent = t(`track.${id}`);
   b.onclick = () => pickTrack(id);
   trackRow.appendChild(b);
 }
@@ -1271,8 +1286,8 @@ for (const id of TRACK_IDS) {
 function updateCourseHint() {
   const id = settings.track;
   const best = savedBest(id, settings.weather);
-  const rec = best === null ? '' : ` 내 기록(${WEATHER_LABELS[settings.weather]}): ${fmtTime(best)}`;
-  document.getElementById('track-hint').textContent = `${TRACK_HINTS[id]}${rec} (온라인은 호스트 코스)`;
+  const rec = best === null ? '' : t('hint.record', { w: t(`weather.${settings.weather}`), t: fmtTime(best) });
+  document.getElementById('track-hint').textContent = t(`hint.${id}`) + rec + t('hint.trackOnline');
 }
 
 function pickTrack(id) {
@@ -1285,7 +1300,7 @@ function pickTrack(id) {
   if (G.mode === 'attract' && track.id !== id) startAttract();
 }
 pickTrack(settings.track);
-// After the course picker: its hint (and TRACK_HINTS) must exist first.
+// After the course picker: its hint must exist first.
 pickWeather(settings.weather);
 document.getElementById('set-volume').oninput = (e) => { settings.volume = Number(e.target.value); audio.setVolume(settings.volume); saveSettings(); };
 document.getElementById('set-orient').onchange = (e) => setOrientation(e.target.value);
@@ -1306,7 +1321,7 @@ document.getElementById('set-quality').onchange = (e) => {
 function cycleCamera() {
   const i = CAMERA_MODES.indexOf(rig.mode);
   rig.setMode(CAMERA_MODES[(i + 1) % CAMERA_MODES.length]);
-  hud.info(CAMERA_LABELS[rig.mode]);
+  hud.info(t(`cam.${rig.mode}`));
 }
 
 document.addEventListener('visibilitychange', () => {
@@ -1352,7 +1367,7 @@ function frame(nowMs) {
       resetKart(G.player);
     }
   }
-  if (input.consume('mute')) hud.info(audio.toggleMute() ? '음소거' : '소리 켜짐');
+  if (input.consume('mute')) hud.info(t(audio.toggleMute() ? 'info.mute' : 'info.unmute'));
   input.endFrame();
   hud.keyGuide(input.device);
 
@@ -1425,7 +1440,6 @@ function frame(nowMs) {
   }
 }
 
-const QUALITY_LABELS = { low: '낮음', medium: '보통', high: '높음' };
 
 /** Feed the auto-quality tuner while a race is really being driven; save its verdict for the next load. */
 function tuneQuality(rawDt) {
@@ -1438,8 +1452,8 @@ function tuneQuality(rawDt) {
   settings.qualityCeiling = v.ceiling;
   saveSettings();
   hud.info(up
-    ? `이 기기는 여유가 있어 다음 실행부터 그래픽 품질을 '${QUALITY_LABELS[v.quality]}'(으)로 올립니다`
-    : `프레임이 부족해 다음 실행부터 그래픽 품질을 '${QUALITY_LABELS[v.quality]}'(으)로 낮춥니다`, 4500);
+    ? t('info.qualityUp', { q: t(`quality.${v.quality}`) })
+    : t('info.qualityDown', { q: t(`quality.${v.quality}`) }), 4500);
 }
 
 function updateRaceFlow() {
@@ -1491,7 +1505,7 @@ function updateRaceFlow() {
   const me = G.tracker?.entries.get(G.player ? 'me' : '');
   if (me && me.wrongWay > 1.2 && G.simTime - G.wrongShown > 1.5) {
     G.wrongShown = G.simTime;
-    hud.flash('역주행!', 1200, 'warn');
+    hud.flash(t('info.wrongWay'), 1200, 'warn');
   }
 }
 

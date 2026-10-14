@@ -1,3 +1,5 @@
+import { t } from './i18n.js';
+
 export function fmtTime(t) {
   if (t === null || t === undefined || !Number.isFinite(t)) return '--:--.---';
   const m = Math.floor(t / 60);
@@ -11,16 +13,16 @@ const k = (...keys) => keys.map((x) => `<kbd>${x}</kbd>`).join('');
 /** In-race control hints, one set per input device. */
 export const KEY_GUIDES = {
   keyboard: [
-    [k('W', '↑'), '가속'], [k('S', '↓'), '브레이크'], [k('A', 'D'), '조향'],
-    [k('C'), '카메라'], [k('R'), '트랙 복귀'], [k('Esc'), '일시정지'], [k('H'), '안내 숨기기'],
+    [k('W', '↑'), 'key.gas'], [k('S', '↓'), 'key.brake'], [k('A', 'D'), 'key.steer'],
+    [k('C'), 'key.cam'], [k('R'), 'key.reset'], [k('Esc'), 'key.pause'], [k('H'), 'key.hide'],
   ],
   pad: [
-    [k('RT'), '가속'], [k('LT'), '브레이크'], [k('L 스틱'), '조향'],
-    [k('Y'), '카메라'], [k('Back'), '트랙 복귀'], [k('Start'), '일시정지'],
+    [k('RT'), 'key.gas'], [k('LT'), 'key.brake'], [k(t('key.stick')), 'key.steer'],
+    [k('Y'), 'key.cam'], [k('Back'), 'key.reset'], [k('Start'), 'key.pause'],
   ],
   touch: [
-    ['왼쪽 드래그', '조향'], [k('GAS'), '가속'], [k('BRAKE'), '브레이크 · 정지 중 길게 = 후진'],
-    [k('🎥'), '카메라'], [k('🔄'), '가로/세로'], [k('❚❚'), '일시정지'],
+    [t('key.drag'), 'key.steer'], [k('GAS'), 'key.gas'], [k('BRAKE'), 'key.brakeTouch'],
+    [k('🎥'), 'key.cam'], [k('🔄'), 'key.orient'], [k('❚❚'), 'key.pause'],
   ],
 };
 
@@ -151,7 +153,7 @@ export class Hud {
   keyGuide(device) {
     if (device === this.keysDevice || !KEY_GUIDES[device]) return;
     this.keysDevice = device;
-    this.keys.innerHTML = KEY_GUIDES[device].map(([keys, what]) => `<span>${keys} ${what}</span>`).join('');
+    this.keys.innerHTML = KEY_GUIDES[device].map(([keys, what]) => `<span>${keys} ${t(what)}</span>`).join('');
   }
 
   /** Show the control hints; with `ms` they fade out on their own after that long. */
