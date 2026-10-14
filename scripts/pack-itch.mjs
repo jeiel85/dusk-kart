@@ -1,8 +1,21 @@
 // Zips dist/ for an itch.io HTML upload (index.html at the archive root).
-// Plain Node (22.2+ for zlib.crc32), no dependencies: deflated entries + central directory.
+// Plain Node, no dependencies: deflated entries + central directory.
 import { readdirSync, readFileSync, statSync, writeFileSync, mkdirSync } from 'node:fs';
 import { join, relative, sep } from 'node:path';
-import { deflateRawSync, crc32 } from 'node:zlib';
+import * as zlib from 'node:zlib';
+
+// zlib.crc32 only exists from Node 22.2; compute it by table on older versions.
+const CRC_TABLE = Array.from({ length: 256 }, (_, n) => {
+  let c = n;
+  for (let k = 0; k < 8; k++) c = c & 1 ? 0xedb88320 ^ (c >>> 1) : c >>> 1;
+  return c >>> 0;
+});
+function tableCrc32(buf) {
+  let c = 0xffffffff;
+  for (const b of buf) c = CRC_TABLE[(c ^ b) & 0xff] ^ (c >>> 8);
+  return (c ^ 0xffffffff) >>> 0;
+}
+const crc32 = zlib.crc32 ?? tableCrc32;
 
 const root = 'dist';
 const out = 'release/dusk-kart-itch.zip';
@@ -25,7 +38,7 @@ let offset = 0;
 for (const file of files) {
   const name = Buffer.from(relative(root, file).split(sep).join('/'), 'utf8');
   const data = readFileSync(file);
-  const packed = deflateRawSync(data, { level: 9 });
+  const packed = zlib.deflateRawSync(data, { level: 9 });
   const crc = crc32(data);
   const head = Buffer.alloc(30);
   head.writeUInt32LE(0x04034b50, 0);
