@@ -117,7 +117,6 @@ export const ENDURANCE_DEF = {
  */
 export const TRACKS = { lumen: TRACK_DEF, sprint: SPRINT_DEF, tech: TECH_DEF, gp: GP_DEF, endurance: ENDURANCE_DEF };
 export const TRACK_IDS = Object.keys(TRACKS);
-export const TRACK_LABELS = { lumen: '클럽', sprint: '스프린트', tech: '테크니컬', gp: 'GP', endurance: '엔듀로' };
 
 function centripetal(p0, p1, p2, p3, t) {
   const d = (a, b) => Math.max(1e-4, Math.sqrt(Math.hypot(b[0] - a[0], b[1] - a[1])));
@@ -336,7 +335,6 @@ export const WEATHER = {
   dry: { id: 'dry', grip: 1, curb: 1 },
   rain: { id: 'rain', grip: 0.72, curb: 0.8 },
 };
-export const WEATHER_LABELS = { dry: '맑음', rain: '비' };
 
 /**
  * Minimum-curvature racing line (lateral offsets per sample) and the matching

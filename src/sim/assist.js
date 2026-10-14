@@ -6,7 +6,6 @@ export const EASY_PACE = 0.95;
 
 /** Control modes offered to the player. */
 export const DRIVE_MODES = ['easy', 'normal', 'real'];
-export const DRIVE_MODE_LABELS = { easy: '쉬움', normal: '보통', real: '리얼' };
 
 /** Physics-level assists passed to Kart.step for each mode. */
 export const PHYSICS_ASSISTS = {

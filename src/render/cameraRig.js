@@ -2,7 +2,6 @@ import * as THREE from 'three';
 import { clamp, lerp } from '../sim/math.js';
 
 export const CAMERA_MODES = ['helmet', 'chase', 'far'];
-export const CAMERA_LABELS = { helmet: '헬멧 액션캠', chase: '3인칭 체이스', far: '3인칭 원거리' };
 
 const tmp = new THREE.Vector3();
 const tmp2 = new THREE.Vector3();

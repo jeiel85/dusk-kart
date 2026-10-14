@@ -1,6 +1,6 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
-import { Track, computeRacingLine, applyWeather, TRACKS, TRACK_IDS, TRACK_LABELS } from '../src/sim/track.js';
+import { Track, computeRacingLine, applyWeather, TRACKS, TRACK_IDS } from '../src/sim/track.js';
 import { Kart, collideKarts } from '../src/sim/kart.js';
 import { AIDriver } from '../src/sim/ai.js';
 import { RaceTracker, gridSlot } from '../src/sim/race.js';
@@ -43,11 +43,10 @@ function botRace(track, line) {
   return { t, resets: all.reduce((n, e) => n + e.resets, 0), finished: rt.standings().every((s) => s.finished) };
 }
 
-test('every course has an id, a label and a matching definition', () => {
+test('every course has an id and a matching definition', () => {
   assert.ok(TRACK_IDS.length >= 2);
   for (const id of TRACK_IDS) {
     assert.equal(TRACKS[id].id, id);
-    assert.equal(typeof TRACK_LABELS[id], 'string');
     assert.equal(new Track(TRACKS[id]).id, id);
   }
   // Course lengths must differ: stored ghosts are also checked by length.
