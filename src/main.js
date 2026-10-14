@@ -1176,12 +1176,15 @@ document.getElementById('btn-join').onclick = () => {
   });
 };
 document.getElementById('btn-lang').onclick = () => {
-  saveLang(getLang() === 'ko' ? 'en' : 'ko');
-  // A ?lang= in the URL would override the saved choice on reload.
-  if (!params.has('lang')) { location.reload(); return; }
+  const next = getLang() === 'ko' ? 'en' : 'ko';
+  // A ?lang= in the URL would override the saved choice on reload, so drop
+  // it once saved; with storage blocked the URL carries the choice instead.
   const url = new URL(location.href);
-  url.searchParams.delete('lang');
-  location.replace(url);
+  if (saveLang(next)) url.searchParams.delete('lang');
+  else url.searchParams.set('lang', next);
+  // Changing only the hash (or nothing) would not reload.
+  if (url.search === location.search) location.reload();
+  else location.replace(url);
 };
 document.getElementById('btn-start').onclick = () => hostStart();
 document.getElementById('btn-freeroam').onclick = () => { enterDriving(); hud.showKeys(true, 8000); };

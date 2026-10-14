@@ -383,10 +383,14 @@ if (typeof window !== 'undefined') {
 
 export const getLang = () => lang;
 
-/** Saves the choice; the caller reloads so every built string follows. */
+/**
+ * Saves the choice; the caller reloads so every built string follows.
+ * Returns false when storage is blocked (some embedding iframes), so the
+ * caller can carry the choice across the reload in ?lang= instead.
+ */
 export function saveLang(l) {
-  if (!LANGS.includes(l)) return;
-  try { localStorage.setItem(LANG_KEY, l); } catch { /* storage blocked: the choice lasts until reload only */ }
+  if (!LANGS.includes(l)) return false;
+  try { localStorage.setItem(LANG_KEY, l); return true; } catch { return false; }
 }
 
 /** Text for `key` with {name} placeholders filled from `vars`. */
