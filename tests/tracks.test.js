@@ -11,7 +11,7 @@ const DT = 1 / 240;
 const BOT = { countersteer: true, brakeAssist: true };
 // Fixed scenery (src/render/trackScene.js) every course must keep clear of.
 const FUNFAIR = { minX: -110, maxX: 80, maxZ: -72 };
-const CLUBHOUSE = { minX: -43, maxX: -17, minZ: -40.5, maxZ: -31.5 };
+const CLUBHOUSE = { minX: -13, maxX: 13, minZ: -40.5, maxZ: -31.5 };
 
 /** Full 3-lap bot race; returns time, resets and whether everyone finished. */
 function botRace(track, line) {

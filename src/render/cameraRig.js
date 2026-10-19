@@ -99,7 +99,9 @@ export class CameraRig {
       cam.rotateX(-0.36 - this.headPitch + v.pitch * s);
       cam.rotateZ(this.headRoll + v.roll * s);
       cam.position.y += v.y * s;
-      cam.fov = this.fovBase.helmet;
+      // Speed sells itself through the lens: the helmet cam widens with pace,
+      // so the world rushes at the edges exactly when the kart is flat out.
+      cam.fov = this.fovBase.helmet + clamp(speed * 0.6, 0, 15);
     } else {
       model.setFirstPerson(false);
       const far = this.mode === 'far';
@@ -123,7 +125,7 @@ export class CameraRig {
       cam.position.copy(this.pos);
       cam.position.y += noise1(this.t * 9) * this.shake * 0.05 * this.shakeScale;
       cam.lookAt(this.look);
-      cam.fov = this.fovBase[this.mode] + clamp(speed * 0.45, 0, 11);
+      cam.fov = this.fovBase[this.mode] + clamp(speed * 0.55, 0, 14);
     }
     this.snap = false;
     cam.updateProjectionMatrix();
@@ -133,10 +135,12 @@ export class CameraRig {
   lens(kart, settings) {
     const speed = kart.speed;
     const helmet = this.mode === 'helmet';
-    const blur = settings.motionBlur * clamp((speed - 6) / 18, 0, 1) * (helmet ? 0.085 : 0.045);
+    const pace = clamp((speed - 4) / 14, 0, 1);
     return {
       distort: settings.lensDistortion ? (helmet ? 0.34 : 0.1) : 0,
-      blur,
+      blur: settings.motionBlur * pace * (helmet ? 0.16 : 0.09),
+      // Peripheral streaks ramp in from ~36 km/h and follow the blur setting.
+      streak: settings.motionBlur * clamp((speed - 10) / 12, 0, 1),
       aberration: helmet ? 0.0035 : 0.0015,
       vignette: helmet ? 0.42 : 0.25,
       // Grain flickers every frame; it follows the shake setting so "0" is a

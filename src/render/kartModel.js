@@ -284,12 +284,36 @@ export class KartModel {
     this.camMount.position.set(0, 0.93, -0.3);
     this.body.add(this.camMount);
 
+    // Headlight beams (night only): additive cones off the nose. A cone's tip
+    // is +Y, so a quarter turn points it forward; the geometry is shifted so
+    // the tip sits at the lamp and the base 3.4 m down the road.
+    const beamMat = new THREE.MeshBasicMaterial({
+      color: 0xfff2d8, transparent: true, opacity: 0.13,
+      blending: THREE.AdditiveBlending, depthWrite: false, side: THREE.DoubleSide, fog: false,
+    });
+    const beamGeo = new THREE.ConeGeometry(0.5, 3.4, 14, 1, true);
+    beamGeo.rotateX(Math.PI / 2);
+    beamGeo.translate(0, 0, 1.7);
+    this.headlights = new THREE.Group();
+    for (const sx of [-0.26, 0.26]) {
+      const beam = new THREE.Mesh(beamGeo, beamMat);
+      beam.position.set(sx, 0.3, 1.0);
+      this.headlights.add(beam);
+    }
+    this.headlights.visible = false;
+    this.body.add(this.headlights);
+
     this._inv = new THREE.Matrix4();
   }
 
   setFirstPerson(on) {
     this.head.visible = !on;
     this.neck.visible = !on;
+  }
+
+  /** Night look: the two headlight cones. Off (invisible) at any other hour. */
+  setNight(on) {
+    this.headlights.visible = !!on;
   }
 
   /** Two-bone IK keeps the gloves glued to the rim as the wheel turns. */

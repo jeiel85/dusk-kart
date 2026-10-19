@@ -16,6 +16,7 @@ const ActionCamShader = {
     uAspect: { value: 16 / 9 },
     uDistort: { value: 0.28 },
     uBlur: { value: 0 },
+    uStreak: { value: 0 },
     uCenter: { value: new THREE.Vector2(0.5, 0.5) },
     uAberration: { value: 0.004 },
     uVignette: { value: 0.35 },
@@ -29,7 +30,7 @@ const ActionCamShader = {
     void main() { vUv = uv; gl_Position = projectionMatrix * modelViewMatrix * vec4(position, 1.0); }`,
   fragmentShader: /* glsl */ `
     uniform sampler2D tDiffuse;
-    uniform float uAspect, uDistort, uBlur, uAberration, uVignette, uTime, uGrain, uRain, uSpeed;
+    uniform float uAspect, uDistort, uBlur, uStreak, uAberration, uVignette, uTime, uGrain, uRain, uSpeed;
     uniform vec2 uCenter;
     varying vec2 vUv;
 
@@ -86,6 +87,20 @@ const ActionCamShader = {
         col.b += texture2D(tDiffuse, uv + o - toC * ca).b;
       }
       col /= float(N);
+      // Peripheral speed streaks: sample outward from the vanishing point so
+      // the frame edges smear away from the centre — the road rushing at the
+      // camera. Only the periphery, so the apex stays readable; it ramps in
+      // with uStreak (from ~36 km/h) and fades out at the very edge.
+      if (uStreak > 0.001) {
+        float w = uStreak * smoothstep(0.06, 0.42, edge) * (1.0 - smoothstep(0.75, 1.15, edge));
+        if (w > 0.001) {
+          vec3 s = vec3(0.0);
+          s += texture2D(tDiffuse, uv - toC * uStreak * 0.030).rgb;
+          s += texture2D(tDiffuse, uv - toC * uStreak * 0.060).rgb;
+          s += texture2D(tDiffuse, uv - toC * uStreak * 0.095).rgb;
+          col = mix(col, s * (1.0 / 3.0), w * 0.55);
+        }
+      }
       float vig = smoothstep(1.25, 0.25, length((vUv - 0.5) * vec2(uAspect, 1.0)));
       col *= mix(1.0 - uVignette, 1.0, vig);
       // Water scatters light, lifting the blacks inside a bead (otherwise a
@@ -123,13 +138,14 @@ export class PostFX {
   }
 
   /**
-   * @param lens {distort, blur, center:Vector2, aberration, vignette, grain, rain?:0..1, speed?:m/s}
+   * @param lens {distort, blur, streak, center:Vector2, aberration, vignette, grain, rain?:0..1, speed?:m/s}
    */
   render(time, lens) {
     const u = this.lens.uniforms;
     u.uTime.value = time % 100;
     u.uDistort.value = lens.distort;
     u.uBlur.value = lens.blur;
+    u.uStreak.value = lens.streak || 0;
     u.uAberration.value = lens.aberration;
     u.uVignette.value = lens.vignette;
     u.uGrain.value = lens.grain;

@@ -39,22 +39,22 @@ DUSK KART is a browser kart racer filmed through a helmet action cam.
 Race at dusk on an outdoor rental-kart track beside the Lumen Park funfair. Look down at the wheel and your gloved hands through a wide-angle lens with barrel distortion and edge motion blur, and race the AI or your friends over 3 laps. No install, no sign-up.
 
 FEATURES
-• Helmet action-cam view that leans with lateral G and looks into corners — plus chase and far cameras
-• Kart physics, simplified but kart-like: a solid rear axle with no differential, caster jacking, rear-only brakes, a centrifugal clutch and a single-cylinder engine (top speed about 80 km/h)
-• 5 original courses, from a 471 m sprint to a 1.15 km enduro
-• Dry or rain: less grip, longer braking, rain streaks and drops on the lens
-• Quick Race against 5 AI karts that use the same physics as you
-• Time Trial with a saved best lap and ghost
-• Online races for up to 8 players, browser to browser over WebRTC — no game server
-• Three control modes: Easy (steering, braking and wall assists), Normal and Real
-• Keyboard, gamepad and touch (phones in landscape or portrait)
-• Zero assets: every model, texture and sound is generated in code
+- Helmet action-cam view that leans with lateral G and looks into corners, plus chase and far cameras. The field of view widens with speed and the lens smears at the edges.
+- Kart physics, simplified but kart-like: a solid rear axle with no differential, caster jacking, rear-only brakes, a centrifugal clutch and a single-cylinder engine (top speed about 80 km/h). Easy and Normal add traction control that saves the exit of a corner when the rears let go.
+- 8 original courses, from a 325 m mini loop to a 1.15 km enduro
+- Five looks: dry, rain, overcast, fog and night. Rain cuts grip and lengthens braking; fog shortens the view; night runs on lamps, neon and headlight beams.
+- Quick Race against 5 AI karts that use the same physics as you
+- Time Trial with a saved best lap and ghost (per course and weather)
+- Online races for up to 8 players, browser to browser over WebRTC, no game server
+- Three control modes: Easy (steering, braking, wall and traction assists), Normal and Real. A steering-sensitivity slider calms the keyboard.
+- Keyboard, gamepad and touch (phones in landscape or portrait)
+- Every model, texture and sound is generated in code at runtime
 
 CONTROLS
-Throttle  W / ↑ · gamepad RT · GAS
-Brake / hold when stopped to reverse  S / ↓ / Space · LT · BRAKE
-Steer  A D / ← → · left stick · drag on the left half
-Camera  C · Y      Back to track  R · Back      Pause  Esc / P · Start
+Throttle  W / arrow up, gamepad RT, GAS
+Brake (hold when stopped to reverse)  S / arrow down / Space, LT, BRAKE
+Steer  A D / arrows, left stick, drag on the left half
+Camera  C, Y      Back to track  R, Back      Pause  Esc / P, Start
 
 ONLINE
 Pick a 5-character room code (or leave it empty for a new room) and share the invite link. Players find each other through public Nostr relays and then connect directly. Strict networks (some office, school or mobile networks) can block direct connections.

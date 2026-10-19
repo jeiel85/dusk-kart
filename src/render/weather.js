@@ -108,6 +108,18 @@ const LOOKS = {
     fog: 0x3e4554, fogDensity: 0.0068, hemi: 0.95, sun: 0.3, exposure: 1.0, overcast: 1,
     sky: { uTop: 0x141a27, uMid: 0x2a3142, uHorizon: 0x5d5a66, uGlow: 0x8a5a44 },
   },
+  overcast: {
+    fog: 0x5d6577, fogDensity: 0.0034, hemi: 1.0, sun: 0.4, exposure: 0.98, overcast: 0.75,
+    sky: { uTop: 0x39445a, uMid: 0x5a6478, uHorizon: 0x9a8f8a, uGlow: 0x6a5a50 },
+  },
+  fog: {
+    fog: 0x77808e, fogDensity: 0.0115, hemi: 0.95, sun: 0.45, exposure: 1.0, overcast: 0.85,
+    sky: { uTop: 0x4a5262, uMid: 0x646e7e, uHorizon: 0x8f9096, uGlow: 0x707680 },
+  },
+  night: {
+    fog: 0x141a26, fogDensity: 0.0048, hemi: 0.5, sun: 0.14, exposure: 0.95, overcast: 0.3, night: 1,
+    sky: { uTop: 0x060a18, uMid: 0x0d1526, uHorizon: 0x1c2438, uGlow: 0x2a3040 },
+  },
 };
 
 /**
@@ -129,6 +141,7 @@ export class WeatherLook {
   setTrackScene(trackScene) {
     this.p.trackScene = trackScene;
     trackScene.setWet(this.id === 'rain');
+    trackScene.setNight(this.id === 'night');
   }
 
   apply(id) {
@@ -145,7 +158,9 @@ export class WeatherLook {
     const u = sky.material.uniforms;
     for (const [k, c] of Object.entries(look.sky)) u[k].value.set(c);
     u.uOvercast.value = look.overcast;
+    u.uNight.value = look.night || 0;
     trackScene.setWet(this.id === 'rain');
+    trackScene.setNight(this.id === 'night');
     rain.mesh.visible = this.id === 'rain';
   }
 }

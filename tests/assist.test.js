@@ -31,6 +31,42 @@ test('steer limiter caps full input below full lock, off in real mode', () => {
   assert.ok((6 * Math.tan(k.steerRange(6, 1))) / L <= 0.91);
 });
 
+test('traction control feeds the throttle back when the rears slide', () => {
+  // Mechanism: a kart whose rears lit up on the last step gets its throttle cut
+  // on the next one; one with grip does not.
+  const k = new Kart();
+  const g = gridSlot(track, 0);
+  k.reset(g.x, g.z, g.heading);
+  k.vx = Math.sin(g.heading) * 8; k.vz = Math.cos(g.heading) * 8;
+  for (const i of [2, 3]) { k.wheels[i].sliding = true; k.wheels[i].slip = 6; }
+  k.step({ throttle: 1, steer: 0 }, DT, track, PHYSICS_ASSISTS.easy);
+  assert.ok(k.throttle < 0.9, `throttle cut to ${k.throttle} while sliding`);
+
+  const gripped = new Kart();
+  gripped.reset(g.x, g.z, g.heading);
+  gripped.vx = Math.sin(g.heading) * 8; gripped.vz = Math.cos(g.heading) * 8;
+  gripped.step({ throttle: 1, steer: 0 }, DT, track, PHYSICS_ASSISTS.easy);
+  assert.equal(gripped.throttle, 1, 'no cut when the rears have grip');
+
+  // Integration: build speed on the straight, then full throttle into full
+  // lock. Normal mode shows the TC working (easy mode's stability assist
+  // already prevents the breakaway — that is its job).
+  const run = (assists) => {
+    const k = new Kart();
+    k.reset(g.x, g.z, g.heading);
+    for (let i = 0; i < 240 * 3; i++) k.step({ throttle: 1, steer: 0 }, DT, track, assists);
+    let slideSteps = 0;
+    for (let i = 0; i < 240 * 1.5; i++) {
+      k.step({ throttle: 1, steer: 1 }, DT, track, assists);
+      for (let w = 2; w < 4; w++) if (k.wheels[w].sliding) slideSteps++;
+    }
+    return slideSteps;
+  };
+  const off = run({ ...PHYSICS_ASSISTS.normal, tc: false });
+  const on = run(PHYSICS_ASSISTS.normal);
+  assert.ok(on < off, `normal-mode slide steps with TC ${on} vs without ${off}`);
+});
+
 test('easy mode: a first-time keyboard player laps cleanly', () => {
   for (const seed of [1, 2]) {
     const r = novice('easy', seed);

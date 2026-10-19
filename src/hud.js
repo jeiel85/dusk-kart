@@ -114,7 +114,9 @@ export class Hud {
 
   update({ pos, total, lap, laps, cur, last, best, kmh, rpm }) {
     this.pos.innerHTML = pos ? `<b>P${pos}</b><small>/${total}</small>` : '';
-    this.lap.textContent = laps > 0 ? `LAP ${Math.max(1, Math.min(lap, laps))}/${laps}` : `LAP ${Math.max(1, lap)}`;
+    this.lap.textContent = laps > 0
+      ? t('hud.lap', { a: Math.max(1, Math.min(lap, laps)), b: laps })
+      : t('hud.lapSolo', { a: Math.max(1, lap) });
     this.cur.textContent = fmtTime(cur);
     this.last.textContent = fmtTime(last);
     this.best.textContent = fmtTime(best);

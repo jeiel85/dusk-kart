@@ -40,19 +40,22 @@ h2 code { font-family: var(--mono); background: rgba(255, 122, 26, 0.16); color:
 .mode-box .note { margin: 8px 0 0; min-height: 2.9em; }
 /* One-line hints: no reserved second line, so the menu stays short. */
 #track-hint, #weather-hint { min-height: 0; }
-/* Five courses share one row: keep each name on a single line on phones. */
+/* Courses share the menu in wrapped rows of five: keep each name on one line. */
 #track-pick { display: grid; grid-template-columns: repeat(5, minmax(0, 1fr)); }
 #track-pick button { padding: 9px 0; font-size: 13px; white-space: nowrap; }
+#weather-pick { display: grid; grid-template-columns: repeat(5, minmax(0, 1fr)); }
+#weather-pick button { padding: 9px 0; font-size: 13px; white-space: nowrap; }
 .menu-row { display: flex; gap: 10px; margin-top: 12px; }
 .menu-row > * { flex: 1; }
-button { font: inherit; color: var(--text); background: linear-gradient(180deg, #ff8c33, #ec5f00); border: 0; border-radius: 12px; padding: 13px 16px; font-weight: 800; cursor: pointer; text-align: left; transition: transform 0.08s, filter 0.15s; }
-button:hover { filter: brightness(1.08); }
+/* Flat surfaces with a top highlight: a pit-lane UI, not a landing page. */
+button { font: inherit; color: var(--text); background: #c2560a; border: 0; border-radius: 12px; padding: 13px 16px; font-weight: 800; cursor: pointer; text-align: left; transition: transform 0.08s, filter 0.15s; box-shadow: inset 0 1px 0 rgba(255, 255, 255, 0.22); }
+button:hover { filter: brightness(1.1); }
 button:active { transform: scale(0.98); }
 button:disabled { opacity: 0.45; cursor: default; filter: none; }
 button small { display: block; font-weight: 500; opacity: 0.85; font-size: 12.5px; margin-top: 2px; }
-.menu > button:not(.ghost) { background: linear-gradient(90deg, rgba(255, 122, 26, 0.95), rgba(236, 80, 0, 0.9)); }
-.menu > button:nth-child(2) { background: linear-gradient(90deg, rgba(55, 198, 255, 0.85), rgba(22, 120, 220, 0.85)); }
-.menu > button:nth-child(3) { background: linear-gradient(90deg, rgba(160, 90, 255, 0.85), rgba(100, 50, 220, 0.85)); }
+.menu > button:not(.ghost) { background: #b45309; }
+.menu > button:nth-child(2) { background: #0e4d7a; }
+.menu > button:nth-child(3) { background: #452a72; }
 button.ghost { background: rgba(255, 255, 255, 0.07); border: 1px solid var(--line); text-align: center; }
 label { display: grid; gap: 6px; margin: 12px 0; font-size: 14px; color: var(--dim); }
 label.check { display: flex; align-items: center; gap: 10px; color: var(--text); }

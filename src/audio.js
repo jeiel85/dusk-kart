@@ -177,8 +177,8 @@ export class KartAudio {
     const now = this.ctx.currentTime;
     const speed = kart.speed;
     this.engine.set(kart.rpm, kart.throttle, now);
-    this.wind.g.gain.setTargetAtTime(clamp(speed * speed * 0.00016, 0, 0.3), now, 0.1);
-    this.wind.f.frequency.setTargetAtTime(400 + speed * 45, now, 0.1);
+    this.wind.g.gain.setTargetAtTime(clamp(speed * speed * 0.00022, 0, 0.34), now, 0.1);
+    this.wind.f.frequency.setTargetAtTime(350 + speed * 55, now, 0.1);
     this.road.g.gain.setTargetAtTime(clamp(speed * 0.012, 0, 0.3), now, 0.05);
     this.spray.g.gain.setTargetAtTime(this.wet ? clamp(speed * 0.008, 0, 0.18) : 0, now, 0.08);
     let slip = 0;

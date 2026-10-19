@@ -111,11 +111,73 @@ export const ENDURANCE_DEF = {
 };
 
 /**
+ * Oval layout ("Lumen Park Oval", ~690 m): same main straight, then one wide
+ * banked-style sweep per end. The fastest average speed of the eight — almost
+ * no braking zones, so bot pace matters more than positioning.
+ */
+export const OVAL_DEF = {
+  id: 'oval',
+  name: 'Lumen Park Oval',
+  tag: 'OVAL', // start-gantry banner
+  halfWidth: 4.5,
+  apron: 1.1,
+  curbWidth: 0.9,
+  start: [-5, -61],
+  points: [
+    [-130, -56], [-20, -58], [90, -56], [130, -30], [135, 10], [105, 45], [40, 60],
+    [-40, 62], [-105, 48], [-140, 10], [-134, -30],
+  ],
+};
+
+/**
+ * Harbor layout ("Lumen Harbor", ~570 m): a flowing egg around the west of the
+ * park — long constant-radius bends, only two real braking zones. Sits between
+ * Sprint and GP in pace.
+ */
+export const HARBOR_DEF = {
+  id: 'harbor',
+  name: 'Lumen Harbor',
+  tag: 'HARBOR', // start-gantry banner
+  halfWidth: 4.5,
+  apron: 1.1,
+  curbWidth: 0.9,
+  start: [-5, -61],
+  points: [
+    [102, 8.1], [79.7, 29.6], [46.4, 41], [12.8, 45.8], [-21.5, 48], [-61.1, 45.3],
+    [-102.1, 32.2], [-130, 7.8], [-132, -20.1], [-109.7, -41.6], [-76.4, -53],
+    [-42.8, -57.8], [-8.5, -60], [31.1, -57.3], [72.1, -44.2], [100, -19.8],
+  ],
+};
+
+/**
+ * Mini layout ("Lumen Park Mini", ~325 m): the shortest lap — a small infield
+ * loop with quick direction changes. Good for phone sessions and for learning
+ * a track by heart; races finish in well under a minute.
+ */
+export const MINI_DEF = {
+  id: 'mini',
+  name: 'Lumen Park Mini',
+  tag: 'MINI', // start-gantry banner
+  halfWidth: 4.5,
+  apron: 1.1,
+  curbWidth: 0.9,
+  start: [-5, -61],
+  points: [
+    [61.1, -31], [44.7, -18], [24, -10], [5, -3.5], [-19.2, 3], [-50.4, 4.1],
+    [-74.6, -4.8], [-77.1, -20], [-60.7, -33], [-40, -41], [-21, -47.5],
+    [3.2, -54], [34.4, -55.1], [58.6, -46.2],
+  ],
+};
+
+/**
  * Selectable layouts, shortest first after the original; ids are what
  * settings and the network carry. Labels are short so five fit on one row
  * of the phone menu — say "코스" after them in sentences.
  */
-export const TRACKS = { lumen: TRACK_DEF, sprint: SPRINT_DEF, tech: TECH_DEF, gp: GP_DEF, endurance: ENDURANCE_DEF };
+export const TRACKS = {
+  lumen: TRACK_DEF, sprint: SPRINT_DEF, tech: TECH_DEF, gp: GP_DEF, endurance: ENDURANCE_DEF,
+  mini: MINI_DEF, harbor: HARBOR_DEF, oval: OVAL_DEF,
+};
 export const TRACK_IDS = Object.keys(TRACKS);
 
 function centripetal(p0, p1, p2, p3, t) {
@@ -326,14 +388,18 @@ export const SURFACE = {
 /**
  * Weather presets. `grip` scales tyre friction on every surface; `curb` is an
  * extra factor for the painted kerbs, which turn far slipperier than asphalt
- * when wet. The rain values are game tuning, not measured data: enough to make
+ * when wet. Rain's values are game tuning, not measured data: enough to make
  * braking points and corner speeds clearly earlier/lower without turning the
- * rental kart into an ice skate.
+ * rental kart into an ice skate. The other three are looks with a light
+ * physical side (fog and night are damp; overcast is dry).
  */
-export const WEATHERS = ['dry', 'rain'];
+export const WEATHERS = ['dry', 'rain', 'overcast', 'fog', 'night'];
 export const WEATHER = {
   dry: { id: 'dry', grip: 1, curb: 1 },
   rain: { id: 'rain', grip: 0.72, curb: 0.8 },
+  overcast: { id: 'overcast', grip: 1, curb: 0.98 },
+  fog: { id: 'fog', grip: 0.95, curb: 0.92 },
+  night: { id: 'night', grip: 0.98, curb: 0.95 },
 };
 
 /**

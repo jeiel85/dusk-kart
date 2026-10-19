@@ -165,6 +165,20 @@ export class Kart {
     this.steer += clamp(target - this.steer, -dSteer, dSteer);
     const delta = this.steer;
 
+    // Traction control (assist): when the rear tyres were sliding on the last
+    // step, feed the throttle back so a mid-corner stab of throttle cannot
+    // light the rears up and spin the kart. A real system acts on measured
+    // slip with a small lag; one simulation frame of lag is nothing next to a
+    // driver's reaction time, and off-throttle the rear axle never spins.
+    if (assists.tc && !this.reverse && speed > 2) {
+      let slide = 0;
+      for (let i = 2; i < 4; i++) {
+        const w = this.wheels[i];
+        if (w.sliding) slide = Math.max(slide, w.slip);
+      }
+      if (slide > 0.4) throttle *= clamp(1 - (slide - 0.4) * 0.9, 0.3, 1);
+    }
+
     // --- engine & clutch -------------------------------------------------
     const wheelRpm = (Math.abs(u) / s.wheelRR) * s.gear * 9.549;
     let drive = 0;

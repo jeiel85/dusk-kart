@@ -6,3 +6,5 @@ dist/
 .DS_Store
 .claude/settings.local.json
 release/
+.playwright-cli/
+docs/shots/

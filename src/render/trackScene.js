@@ -68,33 +68,42 @@ const bulbVertex = /* glsl */ `
 const bulbFragment = /* glsl */ `
   uniform float uTime;
   uniform float uMode;
+  uniform float uBoost;
   varying float vPhase;
   vec3 hsv(float h) { return clamp(abs(mod(h * 6.0 + vec3(0.0, 4.0, 2.0), 6.0) - 3.0) - 1.0, 0.0, 1.0); }
   void main() {
     float chase = 0.55 + 0.45 * sin(uTime * 6.0 - vPhase * 40.0);
     vec3 c = uMode < 0.5 ? hsv(fract(vPhase * 3.0 + uTime * 0.08)) : mix(vec3(1.0, 0.75, 0.35), vec3(1.0), 0.3);
-    gl_FragColor = vec4(c * (1.4 + 3.2 * chase), 1.0);
+    gl_FragColor = vec4(c * (1.4 + 3.2 * chase) * uBoost, 1.0);
     #include <tonemapping_fragment>
     #include <colorspace_fragment>
   }`;
 
+/** Fair-bulb material. `bulbMats` collects them so night can brighten them. */
+const bulbMats = [];
 function bulbMaterial(mode = 0) {
-  return new THREE.ShaderMaterial({
-    uniforms: { uTime: { value: 0 }, uMode: { value: mode } },
+  const m = new THREE.ShaderMaterial({
+    uniforms: { uTime: { value: 0 }, uMode: { value: mode }, uBoost: { value: 1 } },
     vertexShader: bulbVertex,
     fragmentShader: bulbFragment,
     toneMapped: true,
   });
+  bulbMats.push(m);
+  return m;
 }
 
+const neonMats = [];
 function neon(color, intensity = 5) {
-  return new THREE.MeshBasicMaterial({ color: new THREE.Color(color).multiplyScalar(intensity) });
+  const m = new THREE.MeshBasicMaterial({ color: new THREE.Color(color).multiplyScalar(intensity) });
+  neonMats.push({ m, base: m.color.clone() });
+  return m;
 }
 
 export function buildTrackScene(track, racingLine, { quality = 'high' } = {}) {
   const group = new THREE.Group();
   const animated = [];
   const rand = mulberry32(1234);
+  const mtx = new THREE.Matrix4(); // scratch for every instanced placement below
   const hw = track.halfWidth;
   const bar = track.barrier;
   const n = track.count;
@@ -222,6 +231,52 @@ export function buildTrackScene(track, racingLine, { quality = 'high' } = {}) {
     }
   }
 
+  // Tyre stacks on the outside of every other slow corner — kart-track
+  // dressing that also gives the eye something to measure speed against.
+  const stackSpots = apexes.filter((_, i) => i % 2 === 0);
+  if (stackSpots.length) {
+    const tyreGeo = new THREE.TorusGeometry(0.34, 0.15, 8, 14);
+    tyreGeo.rotateX(Math.PI / 2); // lie flat, like a stacked tyre
+    const stacks = new THREE.InstancedMesh(tyreGeo, new THREE.MeshStandardMaterial({ color: 0x1b1c1f, roughness: 0.95 }), stackSpots.length * 3);
+    let si = 0;
+    for (const a of stackSpots) {
+      const f = track.frameAt(a * track.ds);
+      // Positive curvature = left-hand bend, so the outside is the right side.
+      const side = track.k[a] > 0 ? 1 : -1;
+      const x = f.x + f.nx * side * (bar + 2.0), z = f.z + f.nz * side * (bar + 2.0);
+      for (let t = 0; t < 3; t++) {
+        mtx.makeTranslation(x, 0.16 + t * 0.3, z);
+        stacks.setMatrixAt(si++, mtx);
+      }
+    }
+    stacks.castShadow = quality === 'high';
+    group.add(stacks);
+  }
+
+  // --- sponsor banners on the fence ------------------------------------------
+  // They follow the barrier line, so every course gets its own row of them.
+  // Sponsor names, not cheer words: this is a local funfair's track.
+  {
+    const texts = [
+      ['LUMEN COLA', '#101820', '#ffb347'], ['DUSK KART', '#101820', '#5fd4ff'],
+      ['PARK FUEL', '#101820', '#7dff5a'], ['FERRIS & CO.', '#101820', '#ff5a9e'],
+      ['CANDY ROW', '#101820', '#ffd23d'], ['MIDNIGHT RACE', '#101820', '#ff8a3d'],
+    ];
+    const bannerGeo = new THREE.PlaneGeometry(4.6, 1.15);
+    let bi = 0;
+    for (const side of [-1, 1]) {
+      placeAlong(track, side * (bar + 1.9), 27, (x, z, h) => {
+        const [txt, bg, fg] = texts[bi % texts.length];
+        const m = new THREE.Mesh(bannerGeo, new THREE.MeshBasicMaterial({ map: T.bannerTexture(txt, bg, fg) }));
+        m.position.set(x, 1.55, z);
+        // Right-hand normal of the track here, turned to face the road.
+        m.rotation.y = Math.atan2(-side * -Math.cos(h), -side * Math.sin(h));
+        group.add(m);
+        bi++;
+      }, 14);
+    }
+  }
+
   // --- barriers ------------------------------------------------------------
   const blockGeo = new RoundedBoxGeometry(1.14, 0.82, 0.6, 2, 0.1);
   blockGeo.translate(0, 0.41, 0);
@@ -231,7 +286,6 @@ export function buildTrackScene(track, racingLine, { quality = 'high' } = {}) {
     placeAlong(track, side * (bar + 0.3), 1.2, (x, z, h) => placements.push([x, z, h]), 0.3);
   }
   const blocks = new THREE.InstancedMesh(blockGeo, blockMat, placements.length);
-  const mtx = new THREE.Matrix4();
   const q = new THREE.Quaternion();
   const up = new THREE.Vector3(0, 1, 0);
   const red = new THREE.Color(0xd8231f), white = new THREE.Color(0xf1f1ec);
@@ -283,6 +337,7 @@ export function buildTrackScene(track, racingLine, { quality = 'high' } = {}) {
   const headGeo = new THREE.BoxGeometry(0.34, 0.12, 0.7);
   const poleMat = new THREE.MeshStandardMaterial({ color: 0x55585e, metalness: 0.7, roughness: 0.4 });
   const headMat = new THREE.MeshBasicMaterial({ color: new THREE.Color(1, 0.86, 0.62).multiplyScalar(9) });
+  const headBase = headMat.color.clone(); // night brightens the lamp heads
   const poles = new THREE.InstancedMesh(poleGeo, poleMat, lampSpots.length);
   const arms = new THREE.InstancedMesh(armGeo, poleMat, lampSpots.length);
   const heads = new THREE.InstancedMesh(headGeo, headMat, lampSpots.length);
@@ -496,20 +551,97 @@ export function buildTrackScene(track, racingLine, { quality = 'high' } = {}) {
   const fairLights = [
     [-60, 6, -84, 0xff3fb4], [-20, 6, -84, 0x39d7ff], [20, 6, -84, 0xffa733], [60, 6, -84, 0x7dff5a], [-28, 10, -108, 0xff5a3c],
   ];
+  const fairLightRefs = [];
   if (quality !== 'low') {
     for (const [x, y, z, c] of fairLights) {
       const L = new THREE.PointLight(c, 220, 32, 2);
       L.position.set(x, y, z);
       fair.add(L);
+      fairLightRefs.push({ L, base: 220 });
     }
+  }
+
+  // --- grandstands with a living crowd --------------------------------------
+  // Fixed dressing on the lot south of the track: past the barrier/fence line
+  // of every course (all south straights sit north of z ≈ -70) and clear of
+  // the booth row (x < -82 or x > 28). Two stepped stands facing the road.
+  const standSeats = [];
+  for (const [sx0, sx1] of [[-112, -84], [30, 72]]) {
+    const rows = 6, w = sx1 - sx0, perRow = Math.floor(w / 1.9);
+    const seats = new THREE.InstancedMesh(
+      new THREE.BoxGeometry(1.9, 0.5, 0.9),
+      new THREE.MeshStandardMaterial({ color: 0x27374a, roughness: 0.9 }),
+      rows * perRow,
+    );
+    let k = 0;
+    for (let r = 0; r < rows; r++) {
+      for (let c = 0; c < perRow; c++) {
+        standSeats.push([sx0 + 0.95 + c * 1.9, 0.65 + r * 0.5, -73.5 - r * 0.85]);
+        mtx.makeTranslation(sx0 + 0.95 + c * 1.9, 0.65 + r * 0.5, -73.5 - r * 0.85);
+        seats.setMatrixAt(k++, mtx);
+      }
+    }
+    seats.castShadow = quality === 'high';
+    const stand = new THREE.Group();
+    stand.add(seats);
+    const concreteMat = new THREE.MeshStandardMaterial({ color: 0x8f9298, roughness: 0.95 });
+    const wall = new THREE.Mesh(new THREE.BoxGeometry(w + 1, 1.6, 0.5), concreteMat);
+    wall.position.set((sx0 + sx1) / 2, 0.8, -72.2);
+    wall.castShadow = true;
+    stand.add(wall);
+    const roof = new THREE.Mesh(new THREE.BoxGeometry(w + 2, 0.25, 7.4), new THREE.MeshStandardMaterial({ color: 0x39404a, metalness: 0.5, roughness: 0.5 }));
+    roof.position.set((sx0 + sx1) / 2, 6.2, -76.2);
+    roof.rotation.x = -0.05;
+    roof.castShadow = quality === 'high';
+    stand.add(roof);
+    for (const lx of [sx0, (sx0 + sx1) / 2, sx1]) {
+      const leg = new THREE.Mesh(new THREE.CylinderGeometry(0.14, 0.14, 5.4, 8), concreteMat);
+      leg.position.set(lx, 2.6, -79);
+      stand.add(leg);
+    }
+    group.add(stand);
+    // Floodlights under the roof: dark by day, they earn their keep at night.
+    if (quality !== 'low') {
+      const FL = new THREE.PointLight(0xfff0d8, 0, 46, 2);
+      FL.position.set((sx0 + sx1) / 2, 5.6, -76.5);
+      group.add(FL);
+      fairLightRefs.push({ L: FL, base: 700, nightOnly: true });
+    }
+  }
+  // Crowd: one spectator per other seat, bobbing in place (vertex shader, so a
+  // phone pays nothing). The phase is per instance; time is a shared uniform.
+  const crowdTime = { value: 0 };
+  const crowdMat = new THREE.MeshStandardMaterial({ color: 0xffffff, roughness: 0.9 });
+  crowdMat.onBeforeCompile = (shader) => {
+    shader.uniforms.uTime = crowdTime;
+    shader.vertexShader = 'uniform float uTime;\nattribute float aPhase;\n' + shader.vertexShader.replace(
+      '#include <begin_vertex>',
+      `#include <begin_vertex>
+       transformed.y += sin(uTime * 2.3 + aPhase * 6.283) * 0.1 + sin(uTime * 1.2 + aPhase * 12.0) * 0.05;
+       transformed.z += sin(uTime * 1.6 + aPhase * 4.4) * 0.05;`,
+    );
+  };
+  {
+    const spots = standSeats.filter((_, i) => i % 2 === 0);
+    const crowd = new THREE.InstancedMesh(new THREE.BoxGeometry(0.34, 0.46, 0.3), crowdMat, spots.length);
+    const phase = new Float32Array(spots.length);
+    spots.forEach(([x, y, z], k) => {
+      mtx.makeTranslation(x + 0.10, y + 0.42, z + 0.12);
+      crowd.setMatrixAt(k, mtx);
+      crowd.setColorAt(k, new THREE.Color().setHSL(rand() < 0.5 ? rand() * 0.12 : 0.53 + rand() * 0.14, 0.62, 0.42 + rand() * 0.22));
+      phase[k] = rand();
+    });
+    crowd.geometry.setAttribute('aPhase', new THREE.InstancedBufferAttribute(phase, 1));
+    group.add(crowd);
   }
 
   // --- paddock / clubhouse in the infield ---------------------------------
   const club = new THREE.Group();
-  club.position.set(-30, 0, -36);
+  club.position.set(0, 0, -36);
   const winTex = T.windowsTexture(3);
   winTex.repeat.set(2, 0.4);
-  const clubBody = new THREE.Mesh(new THREE.BoxGeometry(26, 6, 9), new THREE.MeshStandardMaterial({ color: 0x9aa0a8, emissiveMap: winTex, emissive: 0xffffff, emissiveIntensity: 1.2, map: winTex }));
+  const clubBodyMat = new THREE.MeshStandardMaterial({ color: 0x9aa0a8, emissiveMap: winTex, emissive: 0xffffff, emissiveIntensity: 1.2, map: winTex });
+  const clubBody = new THREE.Mesh(new THREE.BoxGeometry(26, 6, 9), clubBodyMat);
   clubBody.position.y = 3;
   clubBody.castShadow = true;
   const clubRoof = new THREE.Mesh(new THREE.BoxGeometry(28, 0.5, 11), new THREE.MeshStandardMaterial({ color: 0x33363c }));
@@ -520,12 +652,39 @@ export function buildTrackScene(track, racingLine, { quality = 'high' } = {}) {
   club.add(clubBody, clubRoof, clubSign);
   group.add(club);
 
+  // --- parked karts by the clubhouse ---------------------------------------
+  const PARK_COLORS = ['#2f6bff', '#e8322b', '#22b573'];
+  for (let pi = 0; pi < 3; pi++) {
+    const px = [12, -26, -2][pi], pz = [-28, -28, -22][pi];
+    const k = new THREE.Group();
+    const paint = new THREE.MeshStandardMaterial({ color: PARK_COLORS[pi], roughness: 0.5, metalness: 0.2 });
+    const pan = new THREE.Mesh(new RoundedBoxGeometry(0.7, 0.12, 1.5, 2, 0.05), paint);
+    pan.position.y = 0.16;
+    const nose = new THREE.Mesh(new THREE.ConeGeometry(0.16, 0.5, 8), paint);
+    nose.rotation.x = Math.PI / 2;
+    nose.position.set(0, 0.16, 0.95);
+    const eng = new THREE.Mesh(new THREE.BoxGeometry(0.42, 0.34, 0.4), new THREE.MeshStandardMaterial({ color: 0x8a8f96, metalness: 0.6, roughness: 0.45 }));
+    eng.position.set(0, 0.34, -0.55);
+    const seat = new THREE.Mesh(new THREE.BoxGeometry(0.5, 0.3, 0.5), new THREE.MeshStandardMaterial({ color: 0x151515 }));
+    seat.position.set(0, 0.36, -0.1);
+    k.add(pan, nose, eng, seat);
+    for (const [wx, wz] of [[-0.42, 0.5], [0.42, 0.5], [-0.47, -0.5], [0.47, -0.5]]) {
+      const wmesh = new THREE.Mesh(new THREE.CylinderGeometry(0.13, 0.13, 0.12, 12), new THREE.MeshStandardMaterial({ color: 0x141416 }));
+      wmesh.rotation.z = Math.PI / 2;
+      wmesh.position.set(wx, 0.13, wz);
+      k.add(wmesh);
+    }
+    k.position.set(px, 0, pz);
+    k.rotation.y = [0.5, -0.4, 1.3][pi];
+    group.add(k);
+  }
+
   // --- trees ---------------------------------------------------------------
   const treeSpots = [];
   for (let k = 0; k < 2600 && treeSpots.length < (quality === 'low' ? 150 : 420); k++) {
     const x = (rand() - 0.5) * 520, z = (rand() - 0.5) * 520;
     if (z < -60 && z > -140 && x > -110 && x < 80) continue; // funfair
-    if (Math.abs(x + 30) < 20 && Math.abs(z + 36) < 10) continue; // clubhouse
+    if (Math.abs(x) < 20 && Math.abs(z + 36) < 10) continue; // clubhouse
     if (distanceToTrack(track, x, z) < bar + 7) continue;
     treeSpots.push([x, z, 0.7 + rand() * 0.8]);
   }
@@ -544,6 +703,62 @@ export function buildTrackScene(track, racingLine, { quality = 'high' } = {}) {
   });
   crowns.castShadow = quality === 'high';
   group.add(trunks, crowns);
+
+  // --- birds over the infield ------------------------------------------------
+  {
+    const birdMat = new THREE.MeshStandardMaterial({ color: 0x15171d, roughness: 1 });
+    const bodyGeo = new THREE.BoxGeometry(0.14, 0.1, 0.5);
+    const wingGeo = new THREE.BoxGeometry(0.04, 0.03, 1.0);
+    const birds = [];
+    for (let fl = 0; fl < 2; fl++) {
+      const flock = new THREE.Group();
+      flock.position.set(fl ? 70 : -70, 0, fl ? 30 : 80);
+      for (let b = 0; b < 7; b++) {
+        const bird = new THREE.Group();
+        const wl = new THREE.Mesh(wingGeo, birdMat); wl.position.x = -0.6;
+        const wr = new THREE.Mesh(wingGeo, birdMat); wr.position.x = 0.6;
+        bird.add(new THREE.Mesh(bodyGeo, birdMat), wl, wr);
+        flock.add(bird);
+        birds.push({ g: bird, wl, wr, r: 26 + (b % 3) * 4, a: (b / 7) * Math.PI * 2, y: 30 + (b % 4) * 2.2, sp: 0.55 + (b % 5) * 0.09 });
+      }
+      group.add(flock);
+    }
+    animated.push((t) => {
+      for (const bd of birds) {
+        const a = bd.a + t * 0.11 * bd.sp;
+        bd.g.position.set(Math.cos(a) * bd.r, bd.y + Math.sin(t * 0.8 + bd.a) * 1.5, Math.sin(a) * bd.r);
+        bd.g.rotation.y = -a; // face along the circle
+        const flap = Math.sin(t * 9 * bd.sp + bd.a * 5.0) * 0.5;
+        bd.wl.rotation.x = flap;
+        bd.wr.rotation.x = -flap;
+      }
+    });
+  }
+
+  // --- balloon cart by the fair ------------------------------------------------
+  {
+    const cart = new THREE.Group();
+    cart.position.set(-94, 0, -88);
+    const box = new THREE.Mesh(new THREE.BoxGeometry(2.4, 1.0, 1.4), new THREE.MeshStandardMaterial({ color: 0x8a4b2a, roughness: 0.8 }));
+    box.position.y = 0.5;
+    cart.add(box);
+    const cols = [0xff5a3c, 0xffd23d, 0x3cd2ff, 0x7dff5a, 0xff5a9e];
+    const balloons = [];
+    for (let k = 0; k < 5; k++) {
+      const b = new THREE.Group();
+      const ball = new THREE.Mesh(new THREE.SphereGeometry(0.62, 12, 10), new THREE.MeshStandardMaterial({ color: cols[k], roughness: 0.3 }));
+      ball.scale.y = 1.25;
+      ball.position.y = 1.15;
+      const str = new THREE.Mesh(new THREE.CylinderGeometry(0.012, 0.012, 1.1, 4), new THREE.MeshStandardMaterial({ color: 0xd8d8d0 }));
+      str.position.y = 0.55;
+      b.position.set(-0.9 + k * 0.45, 1.0, (k % 2) * 0.5 - 0.25);
+      b.add(ball, str);
+      cart.add(b);
+      balloons.push(b);
+    }
+    group.add(cart);
+    animated.push((t) => { for (let k = 0; k < balloons.length; k++) balloons[k].position.y = 1.0 + Math.sin(t * 0.9 + k * 1.3) * 0.14; });
+  }
 
   // --- distant city and hills ----------------------------------------------
   const cityMat = new THREE.MeshStandardMaterial({ color: 0x3a3f4a, emissive: 0xffffff, emissiveIntensity: 0.9 });
@@ -587,22 +802,44 @@ export function buildTrackScene(track, racingLine, { quality = 'high' } = {}) {
     [roadMat, 0.28, 0.75], [apronMat, 0.45, 0.7], [curbMat, 0.22, 0.8], [lotMat, 0.4, 0.7],
   ].map(([m, rough, dark]) => ({ m, rough, dark, dry: { rough: m.roughness, color: m.color.clone() } }));
   const poolDry = poolMat.color.clone();
+  let wetOn = false, nightOn = false;
+  // Night: lamps, neon, the fair and the lit windows come up. Wet and night
+  // compose (a wet night both shines and glistens), so the pool colour is a
+  // product of the two factors rather than either one alone.
+  const applyLampPools = () => {
+    poolMat.color.copy(poolDry).multiplyScalar((nightOn ? 2.3 : 1) * (wetOn ? 1.7 : 1));
+  };
   const setWet = (wet) => {
+    wetOn = !!wet;
     for (const t of wetTargets) {
       t.m.roughness = wet ? t.rough : t.dry.rough;
       t.m.color.copy(t.dry.color);
       if (wet) t.m.color.multiplyScalar(t.dark);
     }
-    poolMat.color.copy(poolDry);
-    if (wet) poolMat.color.multiplyScalar(1.7);
+    applyLampPools();
     rubberMat.opacity = wet ? 0.6 : 0.42;
+  };
+  const setNight = (night) => {
+    nightOn = !!night;
+    applyLampPools();
+    headMat.color.copy(headBase).multiplyScalar(nightOn ? 1.7 : 1);
+    for (const { m, base } of neonMats) m.color.copy(base).multiplyScalar(nightOn ? 1.45 : 1);
+    for (const bm of bulbMats) bm.uniforms.uBoost.value = nightOn ? 1.9 : 1;
+    clubBodyMat.emissiveIntensity = nightOn ? 2.4 : 1.2;
+    for (const { L, base, nightOnly } of fairLightRefs) {
+      L.intensity = nightOnly ? (nightOn ? base : 0) : base * (nightOn ? 2.4 : 1);
+    }
   };
 
   return {
     group,
     setStartLights,
     setWet,
-    update(t) { for (const f of animated) f(t); },
+    setNight,
+    update(t) {
+      for (const f of animated) f(t);
+      crowdTime.value = t;
+    },
   };
 }
 
@@ -620,6 +857,7 @@ export function buildSky(sunDir) {
       uGlow: { value: new THREE.Color(0xff8a3d) },
       uTime: { value: 0 },
       uOvercast: { value: 0 }, // 0 = broken dusk clouds, 1 = solid rain cover
+      uNight: { value: 0 }, // 1 = night sky: stars above the horizon
     },
     vertexShader: /* glsl */ `
       varying vec3 vDir;
@@ -630,7 +868,7 @@ export function buildSky(sunDir) {
       }`,
     fragmentShader: /* glsl */ `
       uniform vec3 uSun, uTop, uMid, uHorizon, uGlow;
-      uniform float uTime, uOvercast;
+      uniform float uTime, uOvercast, uNight;
       varying vec3 vDir;
       float hash(vec2 p) { return fract(sin(dot(p, vec2(127.1, 311.7))) * 43758.5453); }
       float noise(vec2 p) {
@@ -655,6 +893,14 @@ export function buildSky(sunDir) {
         vec3 cloud = mix(vec3(0.22, 0.25, 0.35), uGlow * 0.9 + vec3(0.2), pow(sun, 3.0) * sunVis);
         col = mix(col, cloud * (1.0 - 0.35 * uOvercast), c * (0.75 + 0.2 * uOvercast));
         col = mix(col, uHorizon * 0.25, smoothstep(0.0, -0.08, h));
+        // Stars: one candidate per sky cell, high above the horizon only.
+        if (uNight > 0.5) {
+          vec2 sp = floor(d.xz * 340.0 / max(abs(d.y), 0.14));
+          float sh = hash(sp);
+          float star = step(0.9975, sh) * smoothstep(0.06, 0.4, h);
+          float tw = 0.6 + 0.4 * sin(uTime * 2.5 + sh * 40.0);
+          col += vec3(0.8, 0.85, 1.0) * star * tw * 1.4;
+        }
         gl_FragColor = vec4(col, 1.0);
         #include <tonemapping_fragment>
         #include <colorspace_fragment>

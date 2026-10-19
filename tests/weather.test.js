@@ -1,6 +1,6 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
-import { Track, computeRacingLine, applyWeather, SURFACE, WEATHER } from '../src/sim/track.js';
+import { Track, computeRacingLine, applyWeather, SURFACE, WEATHER, WEATHERS } from '../src/sim/track.js';
 import { Kart, collideKarts } from '../src/sim/kart.js';
 import { AIDriver } from '../src/sim/ai.js';
 import { RaceTracker, gridSlot } from '../src/sim/race.js';
@@ -56,10 +56,37 @@ test('wet kerbs lose more grip than wet asphalt; dry is unchanged', () => {
   applyWeather(track, line, 'dry');
 });
 
-test('unknown weather ids fall back to dry', () => {
+test('every weather has sane grip values and non-rain looks stay drivable', () => {
+  for (const id of WEATHERS) {
+    const w = WEATHER[id];
+    assert.ok(w && w.id === id, `${id} defined`);
+    assert.ok(w.grip > 0.7 && w.grip <= 1, `${id} grip ${w.grip}`);
+    assert.ok(w.curb > 0.75 && w.curb <= 1, `${id} curb ${w.curb}`);
+  }
+  // Only rain is meant to change the physics materially.
+  for (const id of ['dry', 'overcast', 'fog', 'night']) {
+    assert.ok(WEATHER[id].grip >= 0.95, `${id} keeps near-dry grip (${WEATHER[id].grip})`);
+  }
+  // Unknown ids still mean dry.
   assert.equal(applyWeather(track, line, 'snow'), 'dry');
-  assert.equal(applyWeather(track, line, undefined), 'dry');
-  assert.equal(track.weather, WEATHER.dry);
+});
+
+test('the new looks keep braking and cornering near dry, and the AI profile follows', () => {
+  applyWeather(track, line, 'dry');
+  const dryStop = stoppingDistance(18), dryAy = cornerAy();
+  const dryProfile = Float64Array.from(line.speed);
+  for (const id of ['overcast', 'fog', 'night']) {
+    applyWeather(track, line, id);
+    assert.equal(line.speed.length, dryProfile.length, `${id} profile rebuilt`);
+    const ratio = Math.min(...line.speed) / Math.min(...dryProfile);
+    assert.ok(ratio > 0.9 && ratio <= 1.001, `${id} corner speed ratio ${ratio}`);
+    assert.equal(Math.max(...line.speed), Math.max(...dryProfile), `${id} top speed engine-limited`);
+    const stop = stoppingDistance(18), ay = cornerAy();
+    assert.ok(stop < dryStop * 1.08, `${id} braking ${stop.toFixed(1)} vs ${dryStop.toFixed(1)}`);
+    assert.ok(ay > dryAy * 0.92, `${id} cornering ${ay.toFixed(2)} vs ${dryAy.toFixed(2)}`);
+  }
+  applyWeather(track, line, 'dry');
+  assert.deepEqual(Array.from(line.speed), Array.from(dryProfile), 'dry profile restored');
 });
 
 test('rain lengthens braking and lowers cornering grip', () => {

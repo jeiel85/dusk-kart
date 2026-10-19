@@ -9,6 +9,7 @@
     "build": "vite build",
     "preview": "vite preview",
     "test": "node --test tests/*.test.js",
+    "smoke": "node scripts/smoke-render.mjs",
     "pack:itch": "vite build && node scripts/pack-itch.mjs"
   },
   "license": "MIT",

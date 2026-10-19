@@ -232,7 +232,7 @@ export function wheelHubTexture() {
   return toTexture(c, { repeat: false });
 }
 
-const BOOTH_WORDS = ['PRIZES', 'CANDY', 'GAMES', 'HOT DOGS', 'RING TOSS', 'SHOOT', 'DONUTS', 'LUCKY'];
+const BOOTH_WORDS = ['PRIZES', 'CANDY', 'GAMES', 'HOT DOGS', 'RING TOSS', 'BALLOONS', 'DONUTS', 'LUCKY'];
 
 export function boothSignTexture(i, hue) {
   const [c, x] = canvas(512, 128);

@@ -9,9 +9,9 @@ export const DRIVE_MODES = ['easy', 'normal', 'real'];
 
 /** Physics-level assists passed to Kart.step for each mode. */
 export const PHYSICS_ASSISTS = {
-  easy: { countersteer: true, brakeAssist: true, steerLimit: 1, stability: 1 },
-  normal: { countersteer: true, brakeAssist: true, steerLimit: 0.8, stability: 0.6 },
-  real: { countersteer: false, brakeAssist: false, steerLimit: 0, stability: 0 },
+  easy: { countersteer: true, brakeAssist: true, steerLimit: 1, stability: 1, tc: true },
+  normal: { countersteer: true, brakeAssist: true, steerLimit: 0.8, stability: 0.6, tc: true },
+  real: { countersteer: false, brakeAssist: false, steerLimit: 0, stability: 0, tc: false },
 };
 
 /**
@@ -56,7 +56,7 @@ export class DriveAssist {
     const ahead = kart.lateral + latVel * 0.6;
     const edge = t.halfWidth - 0.3;
     if (Math.abs(ahead) > edge && Math.sign(latVel) === Math.sign(ahead)) {
-      steer -= Math.sign(ahead) * clamp((Math.abs(ahead) - edge) * 0.35, 0, 0.7);
+      steer -= Math.sign(ahead) * clamp((Math.abs(ahead) - edge) * 0.55, 0, 1.0);
     }
 
     // Corner speed: lift and brake early enough for the next bend. Kept a

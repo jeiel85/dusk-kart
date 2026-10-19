@@ -4,7 +4,17 @@
   <meta charset="utf-8" />
   <meta name="viewport" content="width=device-width, initial-scale=1, maximum-scale=1, user-scalable=no, viewport-fit=cover" />
   <title>Dusk Kart — 액션캠 카트 레이싱</title>
-  <meta name="description" content="브라우저에서 바로 즐기는 3D 카트 레이싱. 헬멧 액션캠 1인칭 시점, 실제 카트 물리, 서버 없는 P2P 온라인 대전." />
+  <meta name="description" content="해 질 녘 놀이공원 옆 카트장을 헬멧 액션캠으로 달리는 브라우저 레이싱. 코스 8개, 날씨 5종, 친구와는 링크 하나로 P2P 대전." />
+  <meta property="og:type" content="website" />
+  <meta property="og:site_name" content="Dusk Kart" />
+  <meta property="og:title" content="Dusk Kart — 액션캠 카트 레이싱" />
+  <meta property="og:description" content="해 질 녘 놀이공원 옆 카트장을 헬멧 액션캠으로 달리는 브라우저 레이싱. 코스 8개, 날씨 5종, 친구와는 링크 하나로 P2P 대전." />
+  <meta property="og:image" content="https://jeiel85.github.io/dusk-kart/og.png" />
+  <meta property="og:url" content="https://jeiel85.github.io/dusk-kart/" />
+  <meta name="twitter:card" content="summary_large_image" />
+  <meta name="twitter:title" content="Dusk Kart — 액션캠 카트 레이싱" />
+  <meta name="twitter:description" content="해 질 녘 놀이공원 옆 카트장을 헬멧 액션캠으로 달리는 브라우저 레이싱. 코스 8개, 날씨 5종, 친구와는 링크 하나로 P2P 대전." />
+  <meta name="twitter:image" content="https://jeiel85.github.io/dusk-kart/og.png" />
   <meta name="theme-color" content="#0d1426" />
   <link rel="icon" href="data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 64 64'%3E%3Crect width='64' height='64' rx='14' fill='%230d1426'/%3E%3Ccircle cx='32' cy='34' r='16' fill='none' stroke='%23ff7a1a' stroke-width='6'/%3E%3Cpath d='M16 34h32' stroke='%23fff' stroke-width='4'/%3E%3C/svg%3E" />
 </head>
@@ -134,6 +144,7 @@
           <option value="real" data-i18n="set.mode.real"></option>
         </select>
       </label>
+      <label><span data-i18n="set.steer"></span> <input id="set-steer" type="range" min="0.4" max="1.6" step="0.1" /></label>
       <label><span data-i18n="set.volume"></span> <input id="set-volume" type="range" min="0" max="1" step="0.05" /></label>
       <label><span data-i18n="set.quality"></span>
         <select id="set-quality">

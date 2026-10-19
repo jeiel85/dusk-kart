@@ -26,6 +26,7 @@ export function sanitizeSettings(saved, defaults, { cameraModes, driveModes, col
     cameraShake: numberIn(0, 1.5),
     lensDistortion: (v) => typeof v === 'boolean',
     driveMode: inList(driveModes),
+    steerSens: numberIn(0.4, 1.6),
     volume: numberIn(0, 1),
     quality: inList(QUALITIES),
     qualityAuto: (v) => typeof v === 'boolean',

@@ -35,7 +35,7 @@ const isTouch = matchMedia('(pointer: coarse)').matches || navigator.maxTouchPoi
 
 // ---------------------------------------------------------------- settings
 const DEFAULTS = {
-  camera: 'helmet', motionBlur: 1, cameraShake: 1, lensDistortion: true, driveMode: 'easy', volume: 0.8,
+  camera: 'helmet', motionBlur: 1, cameraShake: 1, lensDistortion: true, driveMode: 'easy', steerSens: 1, volume: 0.8,
   // Phones start low and let the tuner raise it; desktops start high.
   quality: isTouch ? 'low' : 'high', qualityAuto: isTouch, qualityCeiling: 'high', orientation: 'auto', weather: 'dry', track: 'lumen', name: '', color: COLORS[0], number: 12,
 };
@@ -63,7 +63,7 @@ try {
 renderer.toneMapping = THREE.ACESFilmicToneMapping;
 renderer.toneMappingExposure = 1.05;
 renderer.shadowMap.enabled = settings.quality !== 'low';
-renderer.shadowMap.type = THREE.PCFSoftShadowMap;
+renderer.shadowMap.type = THREE.PCFShadowMap; // three r186 removed PCFSoftShadowMap
 // The quality preset caps the pixel ratio; the governor scales below it while
 // the frame rate is low.
 const governor = new ResolutionGovernor();
@@ -152,6 +152,7 @@ class Entity {
   constructor({ id, name, color, number, suit, kind }) {
     this.id = id; this.name = name; this.color = color; this.number = number; this.kind = kind;
     this.model = new KartModel({ color, number, suit });
+    this.model.setNight(G.weather === 'night');
     scene.add(this.model.root);
     this.model.root.traverse((o) => { if (o.isMesh) o.castShadow = true; });
     if (kind === 'remote' || kind === 'ghost') {
@@ -269,6 +270,10 @@ function setWeather(id) {
   G.weather = applyWeather(track, line, id);
   weatherLook.apply(G.weather);
   audio.setWet(G.weather === 'rain');
+  // Night is the one look that also touches the karts: headlight beams on.
+  const night = G.weather === 'night';
+  for (const e of G.entities) e.model?.setNight?.(night);
+  if (G.ghost?.model) G.ghost.model.setNight(night);
 }
 setWeather(settings.weather);
 
@@ -434,7 +439,10 @@ function playerInput() {
   if (e.ai && (e.autopilot || params.get('autopilot'))) return e.ai.update(e.kart, G.entities.map((x) => x.kart), STEP);
   if (G.paused || uiBlocksDriving()) return { steer: 0, throttle: 0, brake: 0.4 };
   const others = G.entities.filter((x) => x !== e && !x.hidden && !x.noCollide).map((x) => x.kart);
-  return driveAssist.apply(e.kart, { steer: input.steer, throttle: input.throttle, brake: input.brake }, settings.driveMode, others, STEP);
+  // Steering sensitivity scales the raw input, before the driving assist blends
+  // its own guidance in: a lower setting calms the keyboard without losing the
+  // easy-mode line help.
+  return driveAssist.apply(e.kart, { steer: input.steer * settings.steerSens, throttle: input.throttle, brake: input.brake }, settings.driveMode, others, STEP);
 }
 
 function playerDriving(e) {
@@ -531,11 +539,11 @@ function onRaceEvent(e, ev, rt) {
       return;
     }
     const laps = G.tracker.laps;
-    hud.flash(entry.lap === laps ? 'FINAL LAP' : `LAP ${entry.lap}/${laps}`, 1500, entry.lap === laps ? 'gold' : '');
+    hud.flash(entry.lap === laps ? t('race.finalLap') : t('race.lap', { a: entry.lap, b: laps }), 1500, entry.lap === laps ? 'gold' : '');
   }
   if (ev === 'finish') {
     const pos = positionOfMe();
-    hud.flash(`FINISH · P${pos}`, 3500, 'gold');
+    hud.flash(t('race.finish', { p: pos }), 3500, 'gold');
     audio.beep(880, 0.4, 0.2);
     e.autopilot = true;
     if (!e.ai) e.ai = new AIDriver(track, line, { pace: 0.8, seed: 5 });
@@ -1221,6 +1229,7 @@ function fillSettings() {
   document.getElementById('set-shake').value = settings.cameraShake;
   document.getElementById('set-lens').checked = settings.lensDistortion;
   document.getElementById('set-mode').value = settings.driveMode;
+  document.getElementById('set-steer').value = settings.steerSens;
   document.getElementById('set-volume').value = settings.volume;
   const auto = document.querySelector('#set-quality option[value=auto]');
   auto.textContent = t('set.quality.autoNow', { q: t(`quality.${settings.quality}`) });
@@ -1232,6 +1241,7 @@ document.getElementById('set-blur').oninput = (e) => { settings.motionBlur = Num
 document.getElementById('set-shake').oninput = (e) => { settings.cameraShake = Number(e.target.value); rig.shakeScale = settings.cameraShake; saveSettings(); };
 document.getElementById('set-lens').onchange = (e) => { settings.lensDistortion = e.target.checked; saveSettings(); };
 document.getElementById('set-mode').onchange = (e) => setDriveMode(e.target.value);
+document.getElementById('set-steer').oninput = (e) => { settings.steerSens = Number(e.target.value); saveSettings(); };
 
 // Control mode picker on the main menu.
 const modeRow = document.getElementById('mode-pick');
@@ -1473,7 +1483,7 @@ function updateRaceFlow() {
     if (t >= G.goTime) {
       G.phase = 'go';
       audio.beep(880, 0.35, 0.2);
-      hud.flash('GO!', 900, 'good');
+      hud.flash(t('race.go'), 900, 'good');
       hud.fadeKeys(5000);
       trackScene.setStartLights(0, true);
       hud.setLights(0, true, true);
