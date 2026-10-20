@@ -65,6 +65,8 @@ select option { background: #1a2238; }
 input[type=range] { padding: 0; accent-color: var(--accent); }
 input[type=checkbox] { width: 20px; height: 20px; accent-color: var(--accent); }
 .note { color: var(--dim); font-size: 13px; line-height: 1.55; }
+.repo-link { display: inline-flex; align-items: center; gap: 6px; margin-top: 12px; font-size: 12.5px; color: var(--dim); text-decoration: none; }
+.repo-link:hover, .repo-link:focus-visible { color: var(--text); text-decoration: underline; }
 #install-note { margin: 2px 0 0; text-align: center; }
 #invite-url { width: 100%; font-size: 13px; }
 .swatches { display: flex; gap: 8px; flex-wrap: wrap; }
