@@ -26,6 +26,8 @@ const STRINGS = {
     'main.lang': 'English',
     'main.install': '앱 설치',
     'main.installIos': 'Safari 공유(□↑) → "홈 화면에 추가"를 누르면 전체 화면 앱으로 설치됩니다.',
+    'main.source': '소스 코드 · GitHub',
+    'main.sourceAria': 'GitHub에서 소스 코드 보기 (새 탭)',
 
     'online.title': '온라인 대전',
     'online.name': '닉네임',
@@ -218,6 +220,8 @@ const STRINGS = {
     'main.lang': '한국어',
     'main.install': 'Install app',
     'main.installIos': 'In Safari, tap Share (□↑) → "Add to Home Screen" to install as a full-screen app.',
+    'main.source': 'Source code · GitHub',
+    'main.sourceAria': 'View the source code on GitHub (new tab)',
 
     'online.title': 'Online Race',
     'online.name': 'Nickname',
