@@ -1,0 +1,41 @@
+{
+  "id": "./",
+  "name": "Dusk Kart — 액션캠 카트 레이싱",
+  "short_name": "Dusk Kart",
+  "description": "해 질 녘 놀이공원 옆 카트장을 헬멧 액션캠으로 달리는 브라우저 레이싱. 코스 8개, 날씨 5종, 친구와는 링크 하나로 P2P 대전.",
+  "lang": "ko",
+  "start_url": "./",
+  "scope": "./",
+  "display": "standalone",
+  "display_override": ["fullscreen", "standalone"],
+  "orientation": "any",
+  "background_color": "#0d1426",
+  "theme_color": "#0d1426",
+  "categories": ["games", "racing"],
+  "icons": [
+    {
+      "src": "./icon.svg",
+      "sizes": "any",
+      "type": "image/svg+xml",
+      "purpose": "any"
+    },
+    {
+      "src": "./icon-192.png",
+      "sizes": "192x192",
+      "type": "image/png",
+      "purpose": "any"
+    },
+    {
+      "src": "./icon-512.png",
+      "sizes": "512x512",
+      "type": "image/png",
+      "purpose": "any"
+    },
+    {
+      "src": "./icon-maskable-512.png",
+      "sizes": "512x512",
+      "type": "image/png",
+      "purpose": "maskable"
+    }
+  ]
+}

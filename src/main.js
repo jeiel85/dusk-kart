@@ -22,6 +22,7 @@ import { sanitizeSettings, QUALITIES } from './settings.js';
 import { applyOrientation, buttonTarget } from './orientation.js';
 import { ResolutionGovernor, QualityTuner, QUALITY_STEPS } from './perf.js';
 import { t, applyStatic, getLang, saveLang } from './i18n.js';
+import { registerServiceWorker, setupInstallButton } from './pwa.js';
 
 applyStatic();
 
@@ -1204,6 +1205,15 @@ document.getElementById('btn-rejoin').onclick = () => rejoinRoom(false);
 // both join the same rooms (same app id and relays).
 const PUBLIC_URL = 'https://jeiel85.github.io/dusk-kart/';
 const embedded = (() => { try { return window.top !== window.self; } catch { return true; } })();
+registerServiceWorker(navigator, window, embedded);
+setupInstallButton({
+  button: document.getElementById('btn-install'),
+  note: document.getElementById('install-note'),
+  win: window,
+  nav: navigator,
+  embedded,
+  iosHint: () => t('main.installIos'),
+});
 const inviteUrl = (code) => `${embedded ? PUBLIC_URL : location.origin + location.pathname}#room=${code}`;
 document.getElementById('btn-copy').onclick = async () => {
   const url = inviteUrl(G.net?.code);
