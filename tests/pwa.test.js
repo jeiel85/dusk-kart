@@ -124,6 +124,8 @@ test('manifest, icons and index.html PWA links are valid and complete', () => {
 
   const manifest = JSON.parse(readFileSync('public/manifest.webmanifest', 'utf8'));
   assert.equal(manifest.short_name, 'Dusk Kart');
+  // "./"는 manifest 위치가 아니라 출처(jeiel85.github.io) 기준으로 풀려 같은 출처의 다른 게임과 같은 앱이 된다(DECISIONS.md).
+  assert.equal(manifest.id, '/dusk-kart/');
   assert.equal(manifest.display, 'standalone');
   assert.equal(manifest.start_url, './');
   assert.ok(Array.isArray(manifest.icons) && manifest.icons.length >= 3);
